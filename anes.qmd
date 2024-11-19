@@ -1,0 +1,107 @@
+---
+title: "Predicting Electoral Outcomes using Demographics"
+author: "D'Angelo Francis; Su Yeon Seo; Yuxiang 'Nathan' Su"
+format: html
+---
+
+## EDA
+
+```{r}
+#| label: exploratory data analysis 
+
+library(tidyverse)
+library(readxl)
+library(srvyr)
+
+anes_1948_2020 <- 
+  read_csv("data/anes_timeseries_cdf_csv_20220916.csv")
+
+# tidying, getting years to 2000 - 2020 and pre-election vs post-election
+
+# Question for Aaron and Mia: are we able to use only updated variables (~70) plus key ones (such as race indicators) to do modeling, or would that be detrimental to our model?
+
+anes_2000_2020_pre <- 
+  anes_1948_2020 |>
+  filter(VCF0004 %in% c(2000:2020),
+         !VCF0013 == 1,
+         !VCF0014 == 1,
+         !VCF0116 == 9,
+         !VCF0117 == 9,
+         !VCF0118 == 9,
+         !VCF0119 == 9,
+         !VCF0126 == 0,
+         !VCF0126a %in% c(0,9),
+         !VCF0126b %in% c(98,99,0),
+         !VCF0126 %in% c(98,99,00),
+         !VCF0127 == 9,
+         !VCF0127a == 99,
+         !VCF0127b == 9,
+         !VCF0128 == 0,
+         !VCF0128a == 9,
+         !VCF0128b == 9,
+         !VCF0129 %in% c(996,998,999),
+         !VCF0130 %in% c(0,8,9),
+         !VCF0130a %in% c(8,9),
+         !VCF0131 %in% c(0,9),
+         !VCF0132 %in% c(998,999),
+         !VCF0133 %in% c(998,999),
+         !VCF0134 %in% c(8,9),
+         !VCF0135 %in% c(8,9),
+         !VCF0136 == 9,
+         !VCF0137 == 9,
+         !VCF0138 == 9,
+         !VCF0138a == 9,
+         !VCF0138b == 9,
+         !VCF0138c == 9,
+         !VCF0138d == 9,
+         !VCF0138e == 9,
+         !VCF0139 == 9,
+         !VCF0140 %in% c(8,9),
+         !VCF0140a %in% c(8,9),
+         !VCF0141 %in% c(8,9),
+         !VCF0142 %in% c(998,999),
+         !VCF0143 %in% c(8,9),
+         !VCF0144 %in% c(998,999),
+         !VCF0145 %in% c(998,999),
+         !VCF0146 %in% c(8,9),
+         !VCF0147 %in% c(8,9),
+         !VCF0148 == 9,
+         !VCF0148a == 9,
+         !VCF0149 == 9,
+         !VCF0150 == 99,
+         !VCF9151 == 0,
+         !VCF0152 %in% c(998,999),
+         !VCF0153a %in% c(0,9),
+         !VCF0153b %in% c(00,98,99),
+         !VCF0153c %in% c(00,98,99),
+         !VCF0154a == 00,
+         !VCF0154b == 00,
+         !VCF0155 %in% c(0,8,9),
+         !VCF0156 %in% c(0,8,9),
+         !VCF0157 %in% c(0,8,9),
+         !VCF0201 %in% c(98,99),
+         !VCF0202 %in% c(98,99),
+         !VCF0203 %in% c(98,99),
+         !VCF0204 %in% c(98,99),
+         !VCF0205 %in% c(98,99),
+         !VCF0206 %in% c(98,99),
+         !VCF0207 %in% c(98,99),
+         !VCF0208 %in% c(98,99),
+         !VCF0209 %in% c(98,99),
+         !VCF0210 %in% c(98,99),
+         !VCF0211 %in% c(98,99),
+         !VCF0212 %in% c(98,99),
+         !VCF0213 %in% c(98,99),
+         !VCF0214 %in% c(98,99),
+         !VCF0215 %in% c(98,99),
+         !VCF0216 %in% c(98,99),
+         !VCF9056 > 900,
+         !VCF9057 > 900,
+         !VCF9060 > 900,
+         
+         ) |>
+  select()
+
+  
+
+```
