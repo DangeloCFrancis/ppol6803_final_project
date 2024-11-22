@@ -1,8 +1,16 @@
 ---
-title: "Predicting Electoral Outcomes using Demographics"
+title: "Predicting Electoral Outcomes using Demographic Characterisitcs"
 author: "D'Angelo Francis; Su Yeon Seo; Yuxiang 'Nathan' Su"
 format: html
 ---
+
+
+## Purpose
+
+Our research project seeks to identify the key characteristics to identify and predict how a voter votes. 
+ This project utilizes a Classification and Regression Tree model, and 'glm' (logistic and probit regression) models to predict the probability that a survey respondent voted 'conservatively' or 'liberally'[^1]. The primary data for analysis and modeling will be survey data from the [American National Election Studies](https://electionstudies.org/), a collaboration between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), Stanford University, and the National Science Foundation (NSF).  
+
+For our model, we plan on using questions that the ANES asks about a candidate that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the outcome variable our model will predict. The goal of our models are to precisely predict which a voter voted for using the responses from survey questions asking about policies, such as transgender rights, gun control, reproductive rights, etc. We will incorporate a variable importance analysis to deduce which survey topics and demographic characteristics are the best indicators of voters' candidate preference.
 
 ## EDA
 
@@ -10,8 +18,9 @@ format: html
 #| label: exploratory data analysis 
 
 library(tidyverse)
+library(tidymodels) # use case weights 
 library(readxl)
-library(srvyr)
+library(srvyr) # not needed
 
 anes_1948_2020 <- 
   read_csv("data/anes_timeseries_cdf_csv_20220916.csv")
@@ -20,88 +29,66 @@ anes_1948_2020 <-
 
 # Question for Aaron and Mia: are we able to use only updated variables (~70) plus key ones (such as race indicators) to do modeling, or would that be detrimental to our model?
 
-anes_2000_2020_pre <- 
-  anes_1948_2020 |>
-  filter(VCF0004 %in% c(2000:2020),
-         !VCF0013 == 1,
-         !VCF0014 == 1,
-         !VCF0116 == 9,
-         !VCF0117 == 9,
-         !VCF0118 == 9,
-         !VCF0119 == 9,
-         !VCF0126 == 0,
-         !VCF0126a %in% c(0,9),
-         !VCF0126b %in% c(98,99,0),
-         !VCF0126 %in% c(98,99,00),
-         !VCF0127 == 9,
-         !VCF0127a == 99,
-         !VCF0127b == 9,
-         !VCF0128 == 0,
-         !VCF0128a == 9,
-         !VCF0128b == 9,
-         !VCF0129 %in% c(996,998,999),
-         !VCF0130 %in% c(0,8,9),
-         !VCF0130a %in% c(8,9),
-         !VCF0131 %in% c(0,9),
-         !VCF0132 %in% c(998,999),
-         !VCF0133 %in% c(998,999),
-         !VCF0134 %in% c(8,9),
-         !VCF0135 %in% c(8,9),
-         !VCF0136 == 9,
-         !VCF0137 == 9,
-         !VCF0138 == 9,
-         !VCF0138a == 9,
-         !VCF0138b == 9,
-         !VCF0138c == 9,
-         !VCF0138d == 9,
-         !VCF0138e == 9,
-         !VCF0139 == 9,
-         !VCF0140 %in% c(8,9),
-         !VCF0140a %in% c(8,9),
-         !VCF0141 %in% c(8,9),
-         !VCF0142 %in% c(998,999),
-         !VCF0143 %in% c(8,9),
-         !VCF0144 %in% c(998,999),
-         !VCF0145 %in% c(998,999),
-         !VCF0146 %in% c(8,9),
-         !VCF0147 %in% c(8,9),
-         !VCF0148 == 9,
-         !VCF0148a == 9,
-         !VCF0149 == 9,
-         !VCF0150 == 99,
-         !VCF9151 == 0,
-         !VCF0152 %in% c(998,999),
-         !VCF0153a %in% c(0,9),
-         !VCF0153b %in% c(00,98,99),
-         !VCF0153c %in% c(00,98,99),
-         !VCF0154a == 00,
-         !VCF0154b == 00,
-         !VCF0155 %in% c(0,8,9),
-         !VCF0156 %in% c(0,8,9),
-         !VCF0157 %in% c(0,8,9),
-         !VCF0201 %in% c(98,99),
-         !VCF0202 %in% c(98,99),
-         !VCF0203 %in% c(98,99),
-         !VCF0204 %in% c(98,99),
-         !VCF0205 %in% c(98,99),
-         !VCF0206 %in% c(98,99),
-         !VCF0207 %in% c(98,99),
-         !VCF0208 %in% c(98,99),
-         !VCF0209 %in% c(98,99),
-         !VCF0210 %in% c(98,99),
-         !VCF0211 %in% c(98,99),
-         !VCF0212 %in% c(98,99),
-         !VCF0213 %in% c(98,99),
-         !VCF0214 %in% c(98,99),
-         !VCF0215 %in% c(98,99),
-         !VCF0216 %in% c(98,99),
-         !VCF9056 > 900,
-         !VCF9057 > 900,
-         !VCF9060 > 900,
-         
-         ) |>
-  select()
+# Answer: we can drop most variables - use SME to determine what is needed
 
+# Question: some variables don't have a value in election years...
+
+# VCF9999 Version Number Of Release Weight post-election weight full sample - is it ok to drop obs with missing weight?
+
+# VCF0705,VCF0706: outcome variables - REMOVE before testing
+
+# VCF0736:  vote for US House - should possibly keep to capture effect of ballot splitting 
+
+# VCF0824: has skip pattern if responded "moderate" to VCF0849, need to address
+
+# VCF0900, VCF0901b: possibly remove? 
+
+# need to filter for voters (get rid of nonvoter observations)
+
+
+# Keep VCF0004 (year), VCF9999 (post election weight), VCF0013 and VCF0014 (post and pre election completion indicator), and VCF0748 (voted on election day or not)
+
+# Double check thermometers and : selections
+
+anes_2000_2020 <- 
+  anes_1948_2020 |>
+  select(
+    VCF0004,VCF9999,VCF0013,VCF0014,VCF0101,VCF0104,VCF0105b,VCF0110,VCF0128,
+    VCF0147,VCF0111,VCF0114,VCF0116,VCF0151,VCF0146,VCF9224,VCF0801, VCF0803,
+    VCF0805,VCF0806, VCF0811, VCF0813,VCF0814,VCF0823,VCF0824,VCF0826,
+    VCF0894,VCF0829, VCF9279,VCF9280,VCF0201:VCF0236, VCF0253, VCF0290, 
+    VCF0291,VCF0230,VCF9223,VCF0302,VCF0748,VCF0307,
+    VCF0308,VCF0338,VCF0705,VCF0706,VCF0900
+  ) |>
+  filter(VCF0004 %in% c(2000:2020), 
+         VCF0014 == 1 & VCF0013 == 1, 
+         is.na(VCF9999) == FALSE,
+         VCF0748 %in% c(1,5)
+         ) |> 
+  naniar::add_n_miss() |>
+  select(-where(~sum(is.na(.)) > 1000))
+
+# Imputations needed
+
+VCF0114
+
+VCF0806
+
+# Check of NAs in each var
+
+na_count <-
   
+  
+  as_tibble(colSums(is.na(anes_2000_2020)))
+
+lm(VCF0705 ~., data = anes_2000_2020)
+
+
+anes_2000_2020_no_pres_vote <- 
+  anes_2000_2020 |>
+  select(-VCF0705,-VCF0706)
+
+
+lm()
 
 ```
