@@ -53,12 +53,56 @@ anes_1948_2020 <-
 anes_2000_2020 <- 
   anes_1948_2020 |>
   select(
-    VCF0004,VCF9999,VCF0013,VCF0014,VCF0101,VCF0104,VCF0105b,VCF0110,VCF0128,
-    VCF0147,VCF0111,VCF0114,VCF0116,VCF0151,VCF0146,VCF9224,VCF0801, VCF0803,
-    VCF0805,VCF0806, VCF0811, VCF0813,VCF0814,VCF0823,VCF0824,VCF0826,
-    VCF0894,VCF0829, VCF9279,VCF9280,VCF0201:VCF0236, VCF0253, VCF0290, 
-    VCF0291,VCF0230,VCF9223,VCF0302,VCF0748,VCF0307,
-    VCF0308,VCF0338,VCF0705,VCF0706,VCF0900
+    # Year
+    VCF0004, 
+    
+    # Weight
+    VCF9999, # post-election weight
+    
+    # Completion
+    VCF0013, # post-election
+    VCF0014, # pre-election
+    VCF0748, # voted on election day or before
+    
+    # Dependent Variable
+    VCF0302, # initial party identification response
+    VCF0705, # vote for president - major parties and other
+    
+    # Demographic
+    VCF0101, # age
+    VCF0104, # gender
+    VCF0105b, # race-ethnicity
+    VCF0110, # education
+    VCF0147, # marital status
+    VCF0111, # urbanism
+    
+    # Economic Condition
+    VCF0114, # family-income
+    VCF0116, # work status
+    VCF0151, # occupation group
+    VCF0146, # home ownership
+    VCF9224, # stock market investment
+    
+    # Ideology
+    VCF0128, # religion
+    VCF0201:VCF0291, # attitude to different interest groups
+    matches("^VCF08"), # policy preference
+    matches("^VCF92"), # political opinion & VCF9277-82 personal info
+    
+    # Family Information
+    VCF0306, # party identification of R's father
+    VCF0307, # party identification of R's mother
+    VCF0308, # political interest of R's father
+    VCF0309, # political interest of R's mother
+    VCF0138, # number of children in family
+  
+    
+    # Spatial Information
+    VCF0900, # congressional district of residence
+    VCF0900b, # state and congressional district - fips
+    VCF0900c, # state and congressional district - postal abbrev and cd
+    VCF0901a, # state code - fips
+    VCF0901b, # state postal abbrev
   ) |>
   filter(VCF0004 %in% c(2000:2020), 
          VCF0014 == 1 & VCF0013 == 1, 
