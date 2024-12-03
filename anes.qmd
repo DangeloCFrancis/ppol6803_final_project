@@ -44,7 +44,8 @@ anes_2000_2020 <-
     VCF0894,VCF0829, VCF9279,VCF9280,VCF0201:VCF0236, VCF0253, VCF0290, 
     VCF0291,VCF0230,VCF9223,VCF0302,VCF0748,VCF0307,
     VCF0308,VCF0338,VCF0705,VCF0706,VCF0900, VCF0601,VCF0604,VCF0605,VCF0606,
-    VCF0607,VCF0608,VCF0609,VCF0610,VCF0611,VCF0612,VCF0613,VCF0614
+    VCF0607,VCF0608,VCF0609,VCF0610,VCF0611,VCF0612,VCF0613,VCF0614,VCF0704,
+    VCF0704a,VCF0301,VCF0906,VCF0907
   ) |>
   filter(VCF0004 %in% c(2000:2020), 
          VCF0014 == 1 & VCF0013 == 1, 
@@ -74,12 +75,39 @@ anes_2000_2020_nab <-
   anes_2000_2020 |> 
   nabular()
 
-ggplot(data = anes_2000_2020_nab) + 
-  geom_miss_point(aes(x = VCF0114, y = VCF0806, color = VCF0114_NA), position = "jitter")
 
-anes_2000_2020_no_pres_vote <- 
+# dropping outcome vars, need to fix subset issue
+
+anes_2000_2020_model <- 
   anes_2000_2020 |>
-  select(-VCF0705,-VCF0706)
+  select(-c(VCF0704,VCF0704a, VCF0705, VCF0706, VCF0301,VCF0906,VCF0907)) |>  # dropping outcome vars
+  mutate(across(c(VCF0101:VCF0613),impute_median(where(is.na))))
+                                  
+
+```
+
+
+```{r}
+#|label: model-building
+
+set.seed(8)
+
+
+anes_split <- initial_split(anes_2000_2020_model)
+
+anes_training <- training(anes_split)
+
+anes_testing <- testing(anes_split)
+
+# Deal with missing in training data 
+
+# Q: impute before or after split?
+
+anes
+impute_median()
+
+anes_recipe <- 
+  recipe(formula = VCF0706 ~., roles , data = anes_2000_2020_model)
 
 
 ```
