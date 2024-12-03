@@ -21,34 +21,19 @@ library(tidyverse)
 library(tidymodels) # use case weights 
 library(readxl)
 library(srvyr) # not needed
+library(naniar)
 
 anes_1948_2020 <- 
   read_csv("data/anes_timeseries_cdf_csv_20220916.csv")
 
 # tidying, getting years to 2000 - 2020 and pre-election vs post-election
 
-# Question for Aaron and Mia: are we able to use only updated variables (~70) plus key ones (such as race indicators) to do modeling, or would that be detrimental to our model?
-
-# Answer: we can drop most variables - use SME to determine what is needed
-
-# Question: some variables don't have a value in election years...
-
 # VCF9999 Version Number Of Release Weight post-election weight full sample - is it ok to drop obs with missing weight?
-
-# VCF0705,VCF0706: outcome variables - REMOVE before testing
-
-# VCF0736:  vote for US House - should possibly keep to capture effect of ballot splitting 
-
-# VCF0824: has skip pattern if responded "moderate" to VCF0849, need to address
-
-# VCF0900, VCF0901b: possibly remove? 
 
 # need to filter for voters (get rid of nonvoter observations)
 
 
 # Keep VCF0004 (year), VCF9999 (post election weight), VCF0013 and VCF0014 (post and pre election completion indicator), and VCF0748 (voted on election day or not)
-
-# Double check thermometers and : selections
 
 anes_2000_2020 <- 
   anes_1948_2020 |>
@@ -58,37 +43,43 @@ anes_2000_2020 <-
     VCF0805,VCF0806, VCF0811, VCF0813,VCF0814,VCF0823,VCF0824,VCF0826,
     VCF0894,VCF0829, VCF9279,VCF9280,VCF0201:VCF0236, VCF0253, VCF0290, 
     VCF0291,VCF0230,VCF9223,VCF0302,VCF0748,VCF0307,
-    VCF0308,VCF0338,VCF0705,VCF0706,VCF0900
+    VCF0308,VCF0338,VCF0705,VCF0706,VCF0900, VCF0601,VCF0604,VCF0605,VCF0606,
+    VCF0607,VCF0608,VCF0609,VCF0610,VCF0611,VCF0612,VCF0613,VCF0614
   ) |>
   filter(VCF0004 %in% c(2000:2020), 
          VCF0014 == 1 & VCF0013 == 1, 
          is.na(VCF9999) == FALSE,
          VCF0748 %in% c(1,5)
          ) |> 
-  naniar::add_n_miss() |>
+  add_n_miss() |>
   select(-where(~sum(is.na(.)) > 1000))
 
-# Imputations needed
-
-VCF0114
-
-VCF0806
-
-# Check of NAs in each var
+# Check of NAs in each var by column
 
 na_count <-
-  
-  
   as_tibble(colSums(is.na(anes_2000_2020)))
 
-lm(VCF0705 ~., data = anes_2000_2020)
+# Imputations Needed / Check for relationships 
 
+# VCF0114 - Respondent Family - Income Group
+# VCF0806 - GOVERNMENT HEALTH INSURANCE SCALE
+# VCF0218 - THERMOMETER - DEMOCRATIC PARTY
+# VCF0224 - THERMOMETER - REPUBLICAN PARTY
+# VCF0290 - THERMOMETER AVERAGE - MAJOR PARTIES
+# VCF0291 - THERMOMETER INDEX - MAJOR PARTIES
+# VCF0705 - VOTE FOR PRESIDENT- MAJOR PARTIES AND OTHER
+# VCF0706 - VOTE AND NONVOTE- PRESIDENT
+
+anes_2000_2020_nab <- 
+  anes_2000_2020 |> 
+  nabular()
+
+ggplot(data = anes_2000_2020_nab) + 
+  geom_miss_point(aes(x = VCF0114, y = VCF0806, color = VCF0114_NA), position = "jitter")
 
 anes_2000_2020_no_pres_vote <- 
   anes_2000_2020 |>
   select(-VCF0705,-VCF0706)
 
-
-lm()
 
 ```
