@@ -1,5 +1,4 @@
 # PPOL 6803 - Intro into Data Science Final Project (Fall 2024 )
-## Georgetown University McCourt School of Public Policy
 
 Contributors: 
 - [D'Angelo Francis](https://github.com/DangeloCFrancis)
