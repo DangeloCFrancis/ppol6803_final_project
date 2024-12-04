@@ -3,6 +3,7 @@ title: "Related Variables"
 author: "D'Angelo Francis; Nathan Su; Su Yeon Seo"
 date: "`r Sys.Date()`"
 format: html
+embed-resources: TRUE
 ---
 
 ```{r setup, include=FALSE}
