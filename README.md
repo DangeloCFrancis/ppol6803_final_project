@@ -1,7 +1,3 @@
-<<<<<<< HEAD
-# ppol6803_final_project
-Repository for Intro in Data Science (PPOL 6803) 
-=======
 # PPOL 6803 - Intro into Data Science Final Project (Fall 2024 )
 
 Contributors: 
@@ -39,4 +35,3 @@ which survey topics and demographic characteristics are the best indicators of
 candidate preference.
 
 [^1]: For simplicity, our model will reflect a binary-choice election.
->>>>>>> 8682d25 (get rid of GU line)
