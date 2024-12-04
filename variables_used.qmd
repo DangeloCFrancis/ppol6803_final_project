@@ -9,6 +9,8 @@ format: html
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+Source: [American National Election Survey Cumulative Data File 1948-2020](https://electionstudies.org/wp-content/uploads/2022/09/anes_timeseries_cdf_codebook_var_20220916.pdf#page=4.76)
+
 **Outcome Variables:**
 
 - VCF0704 - VOTE FOR PRESIDENT- MAJOR CANDIDATES - DEM / REP / 3RD PARTY
