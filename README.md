@@ -35,4 +35,3 @@ which survey topics and demographic characteristics are the best indicators of
 candidate preference.
 
 [^1]: For simplicity, our model will reflect a binary-choice election.
->>>>>>> 0b477ff (corrected spelling error)
