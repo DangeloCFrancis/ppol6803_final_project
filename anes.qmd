@@ -78,9 +78,11 @@ anes_2000_2020_nab <-
 
 # dropping outcome vars, dealing with NAs (or attempting to) - where is the function that I am trying to subset?
 
+ # dropping outcome vars, impute structural NAs
+
 anes_2000_2020_model <- 
   anes_2000_2020 |>
-  select(-c(VCF0704,VCF0704a, VCF0705, VCF0706, VCF0301,VCF0906,VCF0907)) |> # dropping outcome vars
+  select(-c(VCF0704,VCF0704a, VCF0705, VCF0706, VCF0301,VCF0906,VCF0907)) |> 
   mutate(across(c(VCF0101:VCF0613),impute_median(where(is.na))))
 
 ```
