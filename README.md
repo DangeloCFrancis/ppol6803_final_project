@@ -2,7 +2,7 @@
 
 Contributors: 
 - [D'Angelo Francis](https://github.com/DangeloCFrancis)
-- [Nathan Yu](https://github.com/topnathan) 
+- [Nathan Su](https://github.com/topnathan) 
 - [Su Yeon Seo](https://github.com/ssy0709)
 
 ## Overview
@@ -15,7 +15,7 @@ the Resolute Desk spawned one question: *How 'predictable' is the American voter
 ## Methodology 
 
 To assess the 'predictability' of voters, we trained a Classification and Regression
-Tree (CART) model to provide a probability that a survey respondent voted 'conservatively' or 'liberally'[^1]. 
+Tree (CART) model and Principal Component Analysis (PCA) to provide a probability that a survey respondent voted 'conservatively' or 'liberally'[^1]. 
 Our primary data for analysis and modeling will be survey data from the 
 [American National Election Studies](https://electionstudies.org/), a collaboration 
 between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), 
