@@ -26,6 +26,7 @@ library(baguette)
 library(vip)
 library(ggthemes)
 
+# Global Options 
 theme_set(theme_clean())
 
 anes_1948_2020 <- 
@@ -164,13 +165,15 @@ anes_2000_2020 <-
   mutate(VCF0890 = ifelse(VCF0890 == 9, NA, VCF0890)) |>
   mutate(VCF0894 = ifelse(VCF0894 == 9, NA, VCF0894)) |>
   select(-where(~sum(is.na(.)) > 1000)) |>
-  select(-c(VCF0004,VCF0901b))
+  select(-c(VCF0004,VCF0901b, VCF0013,VCF0014))
 
-# set up outcome variable as factor for classification
+# Note: set up outcome variable as factor for classification - maybe make into a step?
 
-anes_2000_2020$VCF0705 <- as.character(anes_2000_2020$VCF0705)
+# Note: step_num2factor interferes with LASSO since testing data isn't factorized 
 
-anes_2000_2020$VCF0705 <- fct(anes_2000_2020$VCF0705)
+# anes_2000_2020$VCF0705 <- as.character(anes_2000_2020$VCF0705)
+
+# anes_2000_2020$VCF0705 <- fct(anes_2000_2020$VCF0705)
 
 ```
 
@@ -195,6 +198,7 @@ anes_folds <- vfold_cv(data = anes_train, v = 5)
 
 anes_recipe <- 
   recipe(formula = VCF0705~ ., data = anes_train) |>
+  step_num2factor(VCF0705, levels = c("1","2","3")) |>
   step_impute_bag(all_predictors(), trees = 2)
   
 anes_rf_mod <- 
@@ -240,14 +244,18 @@ ggsave(filename = "anes_rf_vip_plot.png")
 
 ```
 
-## Model 2: Bagging 
+## Model 2: Bagged Trees with hyperparameter tuning 
 
 ```{r}
 #|label: bagging 
 
-anes_bagged_trees_model <- bag_tree(cost_complexity = 0.001) |>
-  set_engine("rpart", times = 50) |> # 250 ensemble member to start
+anes_bagged_trees_model <- bag_tree(cost_complexity = tune(), tree_depth = tune()) |>
+  set_engine("rpart") |> 
   set_mode("classification")
+
+anes_bagged_folds <- vfold_cv(data = anes_train, v = 5)
+
+anes_bagged_grid <- grid_regular(cost_complexity(),tree_depth(), levels = 3)
 
 anes_bagged_trees_wf <-
   workflow() |>
@@ -256,20 +264,51 @@ anes_bagged_trees_wf <-
 
 anes_bagged_trees_resamples <- 
   anes_bagged_trees_wf |>
-  fit_resamples(resamples = anes_folds)
+  tune_grid(
+    resamples = anes_bagged_folds,
+    grid = anes_bagged_grid
+  )
 
-collect_metrics(anes_bagged_trees_resamples)
+collect_metrics(anes_bagged_trees_resamples) 
 
+anes_bagged_trees_resamples |>
+  show_best()
+
+best_bagged_value <- 
+  anes_bagged_trees_resamples |>
+  select_best()
+
+anes_bagged_best_wf <- 
+  anes_bagged_trees_wf |>
+  finalize_workflow(best_bagged_value)
+  
 
 ```
 
-## Model 3: Classification Decision Tree 
+Now, we run our bagged tree model with the best parameters given by hyperparameter tuning: 
+
+```{r}
+#|label: applying hyperparametering tuning to final bagged tree model
+
+anes_bagged_finalized_fit <- 
+  anes_bagged_best_wf |>
+  last_fit(anes_split)
+
+anes_bagged_finalized_fit |>
+  collect_metrics()
+
+anes_bagged_finalized_fit |>
+  collect_predictions() |>
+  roc_curve(VCF0705, .pred_class) |>
+  autoplot()
+
+```
+
+
+## Model 3: Naïve Classification Decision Tree 
 
 ```{r}
 #|label: decision tree 
-
-anes_cart_rec <- 
-  recipe(formula = VCF0705 ~ ., data = anes_train)
 
 anes_cart_model <- 
   decision_tree() |>
@@ -291,23 +330,25 @@ rpart.plot::rpart.plot(x = anes_cart_fit$fit$fit$fit)
 ```
 
 
-## Model 4: LASSO Regression 
+## Model 4: LASSO Logistic Classification
 
 ```{r}
-#|label: LASSO regression 
+#|label: LASSO Classification using logistic function
 
-# set up outcome variable as numeric for classification
 
-anes_train$VCF0705 <- as.numeric(anes_train$VCF0705)
+# Notes: using glmnet reduced coefs to 0, glm did not ; seems we can drop VCF0013 and VCF0014
+
+# Note: Can't use nnet engine with case weights, no possible to do multinomial_reg? 
+
+# set up outcome variable as factor for classification
 
 anes_lasso_recipe <- 
-  recipe(VCF0705~., data = anes_train) |>
-  step_impute_bag(all_predictors(), trees = 2) |>
+  anes_recipe |>
   step_normalize(all_predictors())
   
 anes_lasso_model <- 
-  linear_reg(penalty = 2, mixture = 1) |>
-  set_mode(mode = "regression") |>
+  multinom_reg(penalty = 2) |>
+  set_mode(mode = "classification") |>
   set_engine(engine = "glmnet")  
 
 anes_lasso_wf <- 
@@ -315,10 +356,53 @@ anes_lasso_wf <-
   add_recipe(recipe = anes_lasso_recipe) |>
   add_model(spec = anes_lasso_model)
   
+
+# see tidy coef fits 
+
 anes_lasso_wf |>
   fit(data = anes_train) |>
   extract_fit_parsnip() |>
   tidy()
 
+lasso_glm_fit <- 
+anes_lasso_wf |>
+  fit(data = anes_train)
+
+anes_lasso_predictions <-  
+  bind_cols(
+    anes_test,
+    predict(lasso_glm_fit, new_data = anes_test),
+    predict(lasso_glm_fit, new_data = anes_test, type = "prob")
+    )
+
+select(anes_lasso_predictions, VCF0705, starts_with(".pred"))
+
+
+accuracy(
+  data = anes_lasso_predictions,
+  truth = VCF0705,
+  estimate = .pred_class
+)
+
+```
+
+### LASSO Regression Model 
+
+```{r}
+  
+anes_lassolog_model <- 
+  logistic_reg(penalty = 2, mixture = 1) |>
+  set_mode(mode = "classification") |>
+  set_engine(engine = "glm")  
+
+anes_lasso_wf <- 
+  workflow() |>
+  add_recipe(recipe = anes_lasso_recipe) |>
+  add_model(spec = anes_lassolog_model)
+
+anes_lasso_wf |>
+  fit(data = anes_train) |>
+  extract_fit_parsnip() |>
+  tidy()
 
 ```
