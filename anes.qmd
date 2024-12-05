@@ -75,14 +75,22 @@ anes_2000_2020_nab <-
   anes_2000_2020 |> 
   nabular()
 
-
 # dropping outcome vars, dealing with NAs (or attempting to) - where is the function that I am trying to subset?
 
 anes_2000_2020_model <- 
   anes_2000_2020 |>
-  select(-c(VCF0704,VCF0704a, VCF0705, VCF0706, VCF0301,VCF0906,VCF0907)) |> # dropping outcome vars
+  select(-c(VCF0704,VCF0704a, VCF0705, VCF0706, VCF0301,VCF0906,VCF0907,n_miss_all)) |> # dropping outcome vars
   mutate(across(c(VCF0101:VCF0613),impute_median(where(is.na))))
 
+
+anes_2000_2020_model <- 
+  anes_2000_2020 |>
+  select(-c(VCF0704,VCF0704a, VCF0705, VCF0301,VCF0906,VCF0907,n_miss_all))
+
+
+anes_2000_2020_model$VCF0706 <- as.character(anes_2000_2020_model$VCF0706)
+
+anes_2000_2020_model$VCF0706 <- fct(anes_2000_2020_model$VCF0706)
 ```
 
 
@@ -90,7 +98,6 @@ anes_2000_2020_model <-
 #|label: model-building
 
 set.seed(8)
-
 
 anes_split <- initial_split(anes_2000_2020_model)
 
@@ -100,13 +107,38 @@ anes_testing <- testing(anes_split)
 
 # Deal with missing in training data 
 
-# Q: impute before or after split?
+# Q: impute before or after split? What's our method of imputation? 
 
-anes
-impute_median()
+voter_weight <- 
+  anes_training |>
+  importance_weights(VCF9999)
+
 
 anes_recipe <- 
-  recipe(formula = VCF0706 ~., roles , data = anes_2000_2020_model)
+  anes_training |>
+  recipe(formula = VCF0706~.) |>
+  add_case_weights()
+  step_select(-c(VCF0004, VCF9999)) |>
+  step_impute_bag(all_predictors()) |>
+  step_normalize(all_numeric_predictors())
 
+anes_model <-
+  nearest_neighbor(
+    mode = "classification",
+    engine = "kknn"
+  )
+
+anes_workflow <- 
+  workflow() |>
+  add_recipe(anes_recipe) |>
+  add_model(anes_model)
+
+prep(anes_recipe)
+
+anes_fit <- 
+  anes_workflow |>
+  fit(data = anes_training)
+  
+anes_fit
 
 ```
