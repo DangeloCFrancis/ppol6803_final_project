@@ -12,10 +12,10 @@ Our research project seeks to identify the key characteristics to identify and p
 
 For our model, we plan on using questions that the ANES asks about a candidate that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the outcome variable our model will predict. The goal of our models are to precisely predict which a voter voted for using the responses from survey questions asking about policies, such as transgender rights, gun control, reproductive rights, etc. We will incorporate a variable importance analysis to deduce which survey topics and demographic characteristics are the best indicators of voters' candidate preference.
 
-## EDA
+## Setting up our models 
 
 ```{r}
-#| label: setup for random forests
+#| label: setup 
 
 set.seed(41224) # Euro style date for December 4,2024
 
@@ -23,6 +23,10 @@ library(tidyverse)
 library(tidymodels) # use case weights 
 library(readxl)
 library(baguette)
+library(vip)
+library(ggthemes)
+
+theme_set(theme_clean())
 
 anes_1948_2020 <- 
   read_csv("data/anes_timeseries_cdf_csv_20220916.csv")
@@ -162,11 +166,20 @@ anes_2000_2020 <-
   select(-where(~sum(is.na(.)) > 1000)) |>
   select(-c(VCF0004,VCF0901b))
 
-# model set up
+# set up outcome variable as factor for classification
 
 anes_2000_2020$VCF0705 <- as.character(anes_2000_2020$VCF0705)
 
 anes_2000_2020$VCF0705 <- fct(anes_2000_2020$VCF0705)
+
+```
+
+
+## Model 1: Random Forests Model
+
+```{r}
+#|label: random forests model
+
 
 anes_2000_2020 <- 
   anes_2000_2020 |>
@@ -182,7 +195,7 @@ anes_folds <- vfold_cv(data = anes_train, v = 5)
 
 anes_recipe <- 
   recipe(formula = VCF0705~ ., data = anes_train) |>
-  step_impute_bag(all_predictors(), trees = 2) 
+  step_impute_bag(all_predictors(), trees = 2)
   
 anes_rf_mod <- 
     rand_forest(
@@ -211,11 +224,23 @@ anes_rf_resamples <-
 
 collect_metrics(anes_rf_resamples)
 
-rf_final |>
+anes_rf_final <- 
+  anes_rf_wf |>
+  last_fit(anes_split)
+
+anes_vip_plot <- 
+  anes_rf_final |>
   extract_fit_parsnip() |>
   vip(num_features = 20)
+
+anes_vip_plot + ggtitle("Variable Importance in Determining Voter Preference") 
+
+ggsave(filename = "anes_rf_vip_plot.png")
+
+
 ```
 
+## Model 2: Bagging 
 
 ```{r}
 #|label: bagging 
@@ -238,13 +263,13 @@ collect_metrics(anes_bagged_trees_resamples)
 
 ```
 
+## Model 3: Classification Decision Tree 
 
 ```{r}
 #|label: decision tree 
 
 anes_cart_rec <- 
   recipe(formula = VCF0705 ~ ., data = anes_train)
-
 
 anes_cart_model <- 
   decision_tree() |>
@@ -253,7 +278,7 @@ anes_cart_model <-
 
 anes_cart_wf <- 
   workflow() |>
-  add_recipe(anes_cart_rec) |>
+  add_recipe(anes_recipe) |>
   add_model(anes_cart_model)
   
 anes_cart_fit <- 
@@ -262,5 +287,38 @@ anes_cart_fit <-
 
 # create a tree
 rpart.plot::rpart.plot(x = anes_cart_fit$fit$fit$fit)
+
+```
+
+
+## Model 4: LASSO Regression 
+
+```{r}
+#|label: LASSO regression 
+
+# set up outcome variable as numeric for classification
+
+anes_train$VCF0705 <- as.numeric(anes_train$VCF0705)
+
+anes_lasso_recipe <- 
+  recipe(VCF0705~., data = anes_train) |>
+  step_impute_bag(all_predictors(), trees = 2) |>
+  step_normalize(all_predictors())
+  
+anes_lasso_model <- 
+  linear_reg(penalty = 2, mixture = 1) |>
+  set_mode(mode = "regression") |>
+  set_engine(engine = "glmnet")  
+
+anes_lasso_wf <- 
+  workflow() |>
+  add_recipe(recipe = anes_lasso_recipe) |>
+  add_model(spec = anes_lasso_model)
+  
+anes_lasso_wf |>
+  fit(data = anes_train) |>
+  extract_fit_parsnip() |>
+  tidy()
+
 
 ```
