@@ -377,19 +377,24 @@ anes_lasso_predictions <-
 
 select(anes_lasso_predictions, VCF0705, starts_with(".pred"))
 
+```
 
+ Piece of code giving issue since data is multi-class (?)
 accuracy(
   data = anes_lasso_predictions,
   truth = VCF0705,
   estimate = .pred_class
 )
 
-```
 
 ### LASSO Regression Model 
 
 ```{r}
+#| eval: false
   
+
+# old reference code - not to be evauluated 
+
 anes_lassolog_model <- 
   logistic_reg(penalty = 2, mixture = 1) |>
   set_mode(mode = "classification") |>
