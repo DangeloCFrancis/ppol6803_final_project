@@ -19,10 +19,11 @@ the [American National Election Studies](https://electionstudies.org/) 1948-2020
 We relied on survey data in the time frame 2000-2020 (**JUSTIFY**) and utilized the given ANES sampling weights. 
 We cleaned variables for possible MCAR NAs (**JUSTIFY**) and relied on `step_impute_bagged()` in recipes to impute 
 for other types of 'missingness'. After splitting the data (~10,000 observations) into training (.75) and testing data (.25),
-We trained three models on the training data and validated on the testing data: 
+We trained four models on the training data and validated on the testing data: 
 
-- A decision tree,
-- A bagged forest model with re-sampling, and 
+- A decision tree;
+- A random forest model with re-sampling;
+- A bagged forest model with hyperparameter tuning and resampling; and 
 - A LASSO multinominal classification model 
 
 The model uses questions that the ANES asks about a candidate that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the 

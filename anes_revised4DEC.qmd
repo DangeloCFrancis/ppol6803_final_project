@@ -19,43 +19,35 @@ For our model, we plan on using questions that the ANES asks about a candidate t
 
 set.seed(41224) # Euro style date for December 4,2024
 
+# core packages
+
 library(tidyverse)
 library(tidymodels) # use case weights 
 library(readxl)
 library(baguette)
 library(vip)
-library(ggthemes)
 
-# Global Options 
+# visualization packages
+
+library(patchwork) # easy combine plots
+library(tigris) # direct download of shape files from US Census 
+library(sf) # manipulate shapefiles 
+library(rgeoboundaries) # international boundaries 
+library(ggrepel)  # install.packages("ggrepel")
+library(ggthemes) # install.packages("ggthemes")
+library(crsuggest) # install.packages("crsuggest")
+library(ggarchery) # install.packages("ggarchery") for easy arrows
+
+# Global Options
+
 theme_set(theme_clean())
+
+# read data in - see README for link
 
 anes_1948_2020 <- 
   read_csv("data/anes_timeseries_cdf_csv_20220916.csv")
 
 # tidying, getting years to 2000 - 2020 and pre-election vs post-election
-
-# Question for Aaron and Mia: are we able to use only updated variables (~70) plus key ones (such as race indicators) to do modeling, or would that be detrimental to our model?
-
-# Answer: we can drop most variables - use SME to determine what is needed
-
-# Question: some variables don't have a value in election years...
-
-# VCF9999 Version Number Of Release Weight post-election weight full sample - is it ok to drop obs with missing weight?
-
-# VCF0705,VCF0706: outcome variables - REMOVE before testing
-
-# VCF0736:  vote for US House - should possibly keep to capture effect of ballot splitting 
-
-# VCF0824: has skip pattern if responded "moderate" to VCF0849, need to address
-
-# VCF0900, VCF0901b: possibly remove? 
-
-# need to filter for voters (get rid of nonvoter observations)
-
-
-# Keep VCF0004 (year), VCF9999 (post election weight), VCF0013 and VCF0014 (post and pre election completion indicator), and VCF0748 (voted on election day or not)
-
-# Double check thermometers and : selections
 
 anes_2000_2020 <- 
   anes_1948_2020 |>
@@ -178,7 +170,7 @@ anes_2000_2020 <-
 ```
 
 
-## Model 1: Random Forests Model
+## Model 1: Random Forests model with resampling
 
 ```{r}
 #|label: random forests model
@@ -199,7 +191,7 @@ anes_folds <- vfold_cv(data = anes_train, v = 5)
 anes_recipe <- 
   recipe(formula = VCF0705~ ., data = anes_train) |>
   step_num2factor(VCF0705, levels = c("1","2","3")) |>
-  step_impute_bag(all_predictors(), trees = 2)
+  step_impute_bag(all_predictors(), trees = 5)
   
 anes_rf_mod <- 
     rand_forest(
@@ -241,15 +233,15 @@ anes_vip_plot + ggtitle("Variable Importance in Determining Voter Preference")
 
 ggsave(filename = "anes_rf_vip_plot.png")
 
-
 ```
 
 ## Model 2: Bagged Trees with hyperparameter tuning 
 
 ```{r}
-#|label: bagging 
+#|label: bagging with hp tuning
 
-anes_bagged_trees_model <- bag_tree(cost_complexity = tune(), tree_depth = tune()) |>
+anes_bagged_trees_model <- 
+  bag_tree(cost_complexity = tune(), tree_depth = tune()) |>
   set_engine("rpart") |> 
   set_mode("classification")
 
@@ -260,7 +252,8 @@ anes_bagged_grid <- grid_regular(cost_complexity(),tree_depth(), levels = 3)
 anes_bagged_trees_wf <-
   workflow() |>
   add_recipe(anes_recipe) |>
-  add_model(spec = anes_bagged_trees_model)
+  add_model(spec = anes_bagged_trees_model) |>
+  add_case_weights(VCF9999)
 
 anes_bagged_trees_resamples <- 
   anes_bagged_trees_wf |>
@@ -271,21 +264,16 @@ anes_bagged_trees_resamples <-
 
 collect_metrics(anes_bagged_trees_resamples) 
 
-<<<<<<< HEAD
-=======
 anes_bagged_trees_resamples |>
-  show_best()
+  show_best(metric = "roc_auc")
 
 best_bagged_value <- 
   anes_bagged_trees_resamples |>
-  select_best()
+  select_best(metric = "roc_auc")
 
 anes_bagged_best_wf <- 
   anes_bagged_trees_wf |>
   finalize_workflow(best_bagged_value)
-  
-
->>>>>>> 78d0fc9b40e6dda558f9367d276cfb5137440823
 ```
 
 Now, we run our bagged tree model with the best parameters given by hyperparameter tuning: 
@@ -293,17 +281,28 @@ Now, we run our bagged tree model with the best parameters given by hyperparamet
 ```{r}
 #|label: applying hyperparametering tuning to final bagged tree model
 
+
+# issue: since predict() doesn't have VCF0705 
+
 anes_bagged_finalized_fit <- 
   anes_bagged_best_wf |>
   last_fit(anes_split)
 
+anes_bagged_pred <- 
+  anes_bagged_finalized_fit |>
+  predict(new_data = anes_test)
+
 anes_bagged_finalized_fit |>
   collect_metrics()
 
-anes_bagged_finalized_fit |>
-  collect_predictions() |>
-  roc_curve(VCF0705, .pred_class) |>
-  autoplot()
+anes_prediction <-
+  predict(anes_bagged_finalized_fit, new_data = anes_test) |>
+  bind_cols(
+    predict(anes_bagged_finalized_fit, new_data = anes_test, type = "prob"),
+    anes_test |>
+    select(VCF0705)
+  )
+
 
 ```
 
@@ -313,6 +312,8 @@ anes_bagged_finalized_fit |>
 ```{r}
 #|label: decision tree 
 
+# Note: maybe use tuning here? Model doesn't say a lot here (but just enough)
+
 anes_cart_model <- 
   decision_tree() |>
   set_engine(engine = "rpart") |>
@@ -321,7 +322,8 @@ anes_cart_model <-
 anes_cart_wf <- 
   workflow() |>
   add_recipe(anes_recipe) |>
-  add_model(anes_cart_model)
+  add_model(anes_cart_model) |>
+  add_case_weights(VCF9999)
   
 anes_cart_fit <- 
   anes_cart_wf |>
@@ -333,76 +335,66 @@ rpart.plot::rpart.plot(x = anes_cart_fit$fit$fit$fit)
 ```
 
 
-## Model 4: LASSO Logistic Classification
+## Model 4: Elastic Net Regression Logistic Classification
+
+Open issue: having trouble making Elastic graph even with textbook, need to talk to Mia or Aaron 
 
 ```{r}
-#|label: LASSO Classification using logistic function
+#|label: ENR Classification using multinomial regression
 
 
-# Notes: using glmnet reduced coefs to 0, glm did not ; seems we can drop VCF0013 and VCF0014
+# Notes: using glmnet engine and low penalty with 50/50 ridge/LASSO
 
-# Note: Can't use nnet engine with case weights, no possible to do multinomial_reg? 
-
-# set up outcome variable as factor for classification
-
-anes_predictor_lvls <- 
-  c("VCF0013","VCF0014","VCF0748","VCF0101",
-    "VCF0101", 
-    "VCF0104", 
-    "VCF0105b",
-    "VCF0110", 
-    "VCF0147", 
-    "VCF0111",
-    "VCF0114",
-    "VCF0116", 
-    "VCF0151", 
-    "VCF0146", 
-    "VCF9224", 
-    "VCF0128",
-    "VCF0201:VCF0291",
-    "VCF0306",
-    "VCF0307",
-    "VCF0308", 
-    "VCF0309",  
-    "VCF0138",
-    "VCF0900",
-    "VCF0900b", 
-    "VCF0900c",
-    "VCF0901a",
-  )
-
-anes_lasso_recipe <- 
-<<<<<<< HEAD
-  recipe(VCF0705~., data = anes_train) |>
-  step_impute_bag(all_predictors(), trees = 2) |>
-  step_normalize(all_predictors()) |>
-  step_num2factor(all_predictors())
-=======
+anes_elastic_function <- 
+  function(penalty){
+    
+anes_elastic_recipe <- 
   anes_recipe |>
-  step_normalize(all_predictors())
->>>>>>> 78d0fc9b40e6dda558f9367d276cfb5137440823
+  step_normalize(all_numeric_predictors())
   
-anes_lasso_model <- 
-  multinom_reg(penalty = 2) |>
+anes_elastic_model <- 
+  multinom_reg(penalty = penalty, mixture = .5) |>
   set_mode(mode = "classification") |>
   set_engine(engine = "glmnet")  
 
-anes_lasso_wf <- 
+anes_elastic_wf <- 
   workflow() |>
   add_recipe(recipe = anes_lasso_recipe) |>
-  add_model(spec = anes_lasso_model)
-  
+  add_model(spec = anes_lasso_model) |> 
+  add_case_weights(VCF9999)
 
-# see tidy coef fits 
+  # see tidy coef fits 
 
-anes_lasso_wf |>
+anes_elastic_wf |>
   fit(data = anes_train) |>
   extract_fit_parsnip() |>
-  tidy()
+  tidy() |>
+  mutate(penalty = penalty)
 
-lasso_glm_fit <- 
-anes_lasso_wf |>
-  fit(data = anes_train)
+
+}
+
+# iterate over possible penalties for graph
+
+candidate_penalties <- seq(0,2,1)
+
+elastic_penalties <- 
+  map_dfr(.x = candidate_penalties,
+          .f = anes_elastic_function(.x)
+          )
+
+ggplot() +
+  geom_line(data = filter(elastic_penalties, term != "(Intercept)"),
+            aes(x = penalty, y = estimate, group = term)) + 
+  geom_point(data = filter(elastic_penalties, term != "(Intercept)"),
+             aes(x = penalty, y = estimate)) +
+  geom_label_repel(data = filter(elastic_penalties, 
+                                 term != "(Intercept)", 
+                                 estimate != 0),
+                   aes(x = penalty, y = estimate, label = term)
+                   )
+
+
 
 anes_lasso_predictions <-  
   bind_cols(
@@ -414,13 +406,11 @@ anes_lasso_predictions <-
 select(anes_lasso_predictions, VCF0705, starts_with(".pred"))
 
 ```
+Getting this error trying to test predictive models for all models:
 
- Piece of code giving issue since data is multi-class (?)
-accuracy(
-  data = anes_lasso_predictions,
-  truth = VCF0705,
-  estimate = .pred_class
-)
+Error in `step_num2factor()`:
+! The following required column is missing from `new_data` in step
+  'num2factor_ug3md': VCF0705.
 
 
 ### LASSO Regression Model 
@@ -429,7 +419,7 @@ accuracy(
 #| eval: false
   
 
-# old reference code - not to be evauluated 
+# old reference code - not to be evaluated 
 
 anes_lassolog_model <- 
   logistic_reg(penalty = 2, mixture = 1) |>
