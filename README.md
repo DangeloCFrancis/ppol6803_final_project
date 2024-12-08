@@ -2,7 +2,7 @@
 
 Contributors: 
 - [D'Angelo Francis](https://github.com/DangeloCFrancis)
-- [Nathan Yu](https://github.com/topnathan) 
+- [Nathan Su](https://github.com/topnathan) 
 - [Su Yeon Seo](https://github.com/ssy0709)
 
 ## Overview
@@ -14,24 +14,33 @@ the Resolute Desk spawned one question: *How 'predictable' is the American voter
 
 ## Methodology 
 
-To assess the 'predictability' of voters, we trained a Classification and Regression
-Tree (CART) model to provide a probability that a survey respondent voted 'conservatively' or 'liberally'[^1]. 
-Our primary data for analysis and modeling will be survey data from the 
-[American National Election Studies](https://electionstudies.org/), a collaboration 
-between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), 
-Stanford University,and the National Science Foundation (NSF). We focused on responses between
-2000 and 2020. The list of the survey variables used in the model can be found [here](https://dangelocfrancis.github.io/ppol6803_final_project/).
-The codebook provided by ANES for the time series study can be found [here](https://electionstudies.org/wp-content/uploads/2022/09/anes_timeseries_cdf_codebook_var_20220916.pdf#page=4.76).
+To assess the 'predictability' of voters, we trained multiple models with training data split from 
+the [American National Election Studies](https://electionstudies.org/) 1948-2020 cumulative time series data. 
+We relied on survey data in the time frame 2000-2020 (**JUSTIFY**) and utilized the given ANES sampling weights. 
+We cleaned variables for possible MCAR NAs (**JUSTIFY**) and relied on `step_impute_bagged()` in recipes to impute 
+for other types of 'missingness'. After splitting the data (~10,000 observations) into training (.75) and testing data (.25),
+We trained three models on the training data and validated on the testing data: 
 
-The model uses questions that the ANES asks about a candidate 
-that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the 
+- A decision tree,
+- A bagged forest model with re-sampling, and 
+- A LASSO multinominal classification model 
+
+The model uses questions that the ANES asks about a candidate that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the 
 actual outcome($\hat{Y}$). The goal of our model is to have it precisely predict
 voter preference by learning about the associated demographic characteristics (race and ethnicity,
-religion, socioeconomic status, etc.) and using survey responses asking about relevant policies 
-(transgender rights, gun control, reproductive rights, etc.).
+religion, socioeconomic status, etc.) and using ~80 survey responses asking about politics. 
+(opinion on transgender rights, gun control, reproductive rights, etc.). 
 
-We will incorporate variable importance analysis (VIM analysis) to deduce 
-which survey topics and demographic characteristics are the best indicators of 
+- [Complete list of the survey variables used](https://dangelocfrancis.github.io/ppol6803_final_project/)
+- [ANES 1948 - 2020 Cumulative Time Series Data Codebook](https://electionstudies.org/wp-content/uploads/2022/09/anes_timeseries_cdf_codebook_var_20220916.pdf#page=4.76)
+
+
+We will incorporate variable importance analysis (VIM analysis) to deduce which
+survey topics and demographic characteristics are the best indicators of 
 candidate preference.
 
-[^1]: For simplicity, our model will reflect a binary-choice election.
+[^1]: A collaboration between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), 
+Stanford University,and the National Science Foundation (NSF).
+
+[^2]: For simplicity, our model will reflect a trinary-choice election: liberal/left-leaning, conservative/right-leaning, or moderate.
+
