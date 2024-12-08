@@ -437,3 +437,24 @@ anes_lasso_wf |>
   tidy()
 
 ```
+
+## Using knowledge from above to predict Korean voter sentiment 
+
+```{r}
+#| label: setup for using korean survey data
+
+# Note: Follow instructions in icpsr R file
+
+load("data/38577-0001-Data.rda")
+
+icpsr_korean_survey <- da38577.0001
+
+
+library(prettyR)
+
+lbls <- sort(levels(da99999.0001$MYVAR))
+lbls <- (sub("^\\([0-9]+\\) +(.+$)", "\\1", lbls))
+da99999.0001$MYVAR <- as.numeric(sub("^\\(0*([0-9]+)\\).+$", "\\1", da99999.0001$MYVAR))
+da99999.0001$MYVAR <- add.value.labels(da99999.0001$MYVAR, lbls)
+
+```
