@@ -332,41 +332,66 @@ rpart.plot::rpart.plot(x = anes_cart_fit$fit$fit$fit)
 
 ## Model 4: LASSO Logistic Classification
 
+## Model 4: Elastic Net Regression Logistic Classification
+
+Open issue: having trouble making Elastic graph even with textbook, need to talk to Mia or Aaron 
+
 ```{r}
-#|label: LASSO Classification using logistic function
+#|label: ENR Classification using multinomial regression
 
 
-# Notes: using glmnet reduced coefs to 0, glm did not ; seems we can drop VCF0013 and VCF0014
+# Notes: using glmnet engine and low penalty with 50/50 ridge/LASSO
 
-# Note: Can't use nnet engine with case weights, no possible to do multinomial_reg? 
-
-# set up outcome variable as factor for classification
-
-anes_lasso_recipe <- 
+anes_elastic_function <- 
+  function(penalty){
+    
+anes_elastic_recipe <- 
   anes_recipe |>
-  step_normalize(all_predictors())
+  step_normalize(all_numeric_predictors())
   
-anes_lasso_model <- 
-  multinom_reg(penalty = 2) |>
+anes_elastic_model <- 
+  multinom_reg(penalty = penalty, mixture = .5) |>
   set_mode(mode = "classification") |>
   set_engine(engine = "glmnet")  
 
-anes_lasso_wf <- 
+anes_elastic_wf <- 
   workflow() |>
   add_recipe(recipe = anes_lasso_recipe) |>
-  add_model(spec = anes_lasso_model)
-  
+  add_model(spec = anes_lasso_model) |> 
+  add_case_weights(VCF9999)
 
-# see tidy coef fits 
+  # see tidy coef fits 
 
-anes_lasso_wf |>
+anes_elastic_wf |>
   fit(data = anes_train) |>
   extract_fit_parsnip() |>
-  tidy()
+  tidy() |>
+  mutate(penalty = penalty)
 
-lasso_glm_fit <- 
-anes_lasso_wf |>
-  fit(data = anes_train)
+
+}
+
+# iterate over possible penalties for graph
+
+candidate_penalties <- seq(0,2,1)
+
+elastic_penalties <- 
+  map_dfr(.x = candidate_penalties,
+          .f = anes_elastic_function(.x)
+          )
+
+ggplot() +
+  geom_line(data = filter(elastic_penalties, term != "(Intercept)"),
+            aes(x = penalty, y = estimate, group = term)) + 
+  geom_point(data = filter(elastic_penalties, term != "(Intercept)"),
+             aes(x = penalty, y = estimate)) +
+  geom_label_repel(data = filter(elastic_penalties, 
+                                 term != "(Intercept)", 
+                                 estimate != 0),
+                   aes(x = penalty, y = estimate, label = term)
+                   )
+
+
 
 anes_lasso_predictions <-  
   bind_cols(
@@ -378,36 +403,9 @@ anes_lasso_predictions <-
 select(anes_lasso_predictions, VCF0705, starts_with(".pred"))
 
 ```
+Getting this error trying to test predictive models for all models:
 
- Piece of code giving issue since data is multi-class (?)
-accuracy(
-  data = anes_lasso_predictions,
-  truth = VCF0705,
-  estimate = .pred_class
-)
+Error in `step_num2factor()`:
+! The following required column is missing from `new_data` in step
+  'num2factor_ug3md': VCF0705.
 
-
-### LASSO Regression Model 
-
-```{r}
-#| eval: false
-  
-
-# old reference code - not to be evauluated 
-
-anes_lassolog_model <- 
-  logistic_reg(penalty = 2, mixture = 1) |>
-  set_mode(mode = "classification") |>
-  set_engine(engine = "glm")  
-
-anes_lasso_wf <- 
-  workflow() |>
-  add_recipe(recipe = anes_lasso_recipe) |>
-  add_model(spec = anes_lassolog_model)
-
-anes_lasso_wf |>
-  fit(data = anes_train) |>
-  extract_fit_parsnip() |>
-  tidy()
-
-```
