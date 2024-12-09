@@ -297,6 +297,8 @@ anes_bagged_finalized_fit <-
 anes_bagged_finalized_fit |>
   collect_metrics()
 
+ # need to fix roc_curve and autoplot()
+
 anes_bagged_finalized_fit |>
   collect_predictions() |>
   roc_curve(VCF0705, .pred_class) |>
