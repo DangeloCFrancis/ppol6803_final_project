@@ -15,7 +15,9 @@ For our model, we plan on using questions that the ANES asks about a candidate t
 ## Setting up our models 
 
 ```{r}
-#| label: setup 
+#| label: library setup 
+#| message: false
+#| warning: false
 
 set.seed(41224) # Euro style date for December 4,2024
 
@@ -41,6 +43,11 @@ library(ggarchery) # install.packages("ggarchery") for easy arrows
 # Global Options
 
 theme_set(theme_clean())
+```
+
+```{r}
+#| label: ANES data loading and variable selection 
+
 
 # read data in - see README for link
 
@@ -413,31 +420,6 @@ Error in `step_num2factor()`:
   'num2factor_ug3md': VCF0705.
 
 
-### LASSO Regression Model 
-
-```{r}
-#| eval: false
-  
-
-# old reference code - not to be evaluated 
-
-anes_lassolog_model <- 
-  logistic_reg(penalty = 2, mixture = 1) |>
-  set_mode(mode = "classification") |>
-  set_engine(engine = "glm")  
-
-anes_lasso_wf <- 
-  workflow() |>
-  add_recipe(recipe = anes_lasso_recipe) |>
-  add_model(spec = anes_lassolog_model)
-
-anes_lasso_wf |>
-  fit(data = anes_train) |>
-  extract_fit_parsnip() |>
-  tidy()
-
-```
-
 ## Using knowledge from above to predict Korean voter sentiment 
 
 ```{r}
@@ -447,14 +429,47 @@ anes_lasso_wf |>
 
 load("data/38577-0001-Data.rda")
 
-icpsr_korean_survey <- da38577.0001
+icpsr_korean_survey <-
+  da38577.0001
+
+# data cleaning and selection
+
+icpsr_reduced <- 
+  icpsr_korean_survey |>
+  select(
+    YEAR, FINALWT,SEX,AGE, MARITAL,EMPLY,EDUC,TECHHIGH,SPEDUC,PAEDUC,MAEDUC,
+    WGSECT,WGUNN,WGPOSTN,RINCOME,INDUSTRY,OCC,INCOME,SATFIN,FINALTER,STDLIVIN,WORRY316,HELPPARE,KIDNUM10,PARSOL,CLASS,HOUSTYPE,HOUSOWNS,BLOODTYP,FEAR,FAMILY,FRIENDS,LEISURE,MONEY,EDUCATN,HEALTH,RELIGION,GETAHEAD,CULTBIAS1:CULTBIAS12,DONN1:DONN8,INDDIFF,IDEALFAM,MARIGOLD,WOMENCHD,LOVCOHAB,WOMENROL,MARABORT,HLPECONO,CHDOBEYP,HUSBWIFE,MARFUTUR,CHDFUTUR,FEJOBAFF,MAPAID,ABCHOOSE,HAPMAR,INFORAID,AIDOLD,GENCONF1:GENCONF5,OLDWELF1:OLDWELF3,OLDCONT1:OLDCONT3,starts_with("GOV"),starts_with("P")
+    )
 
 
-library(prettyR)
 
-lbls <- sort(levels(da99999.0001$MYVAR))
-lbls <- (sub("^\\([0-9]+\\) +(.+$)", "\\1", lbls))
-da99999.0001$MYVAR <- as.numeric(sub("^\\(0*([0-9]+)\\).+$", "\\1", da99999.0001$MYVAR))
-da99999.0001$MYVAR <- add.value.labels(da99999.0001$MYVAR, lbls)
+# PARTYLR is outcome variable 
+
+
+
+korean_recipe <-
+  recipe(PARTYLR~., data = )
+
+anes_cart_model <- 
+  decision_tree() |>
+  set_engine(engine = "rpart") |>
+  set_mode(mode = "classification")
+
+anes_cart_wf <- 
+  workflow() |>
+  add_recipe(anes_recipe) |>
+  add_model(anes_cart_model) |>
+  add_case_weights(VCF9999)
+  
+anes_cart_fit <- 
+  anes_cart_wf |>
+  fit(data = anes_train)
+
+# create a tree
+rpart.plot::rpart.plot(x = anes_cart_fit$fit$fit$fit)
+
+
+
+# PARTYLR is outcome variable here 
 
 ```
