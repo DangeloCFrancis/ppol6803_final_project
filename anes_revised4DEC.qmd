@@ -169,18 +169,12 @@ anes_2000_2020 <-
   mutate(VCF0888 = ifelse(VCF0888 == 9, NA, VCF0888)) |>
   mutate(VCF0890 = ifelse(VCF0890 == 9, NA, VCF0890)) |>
   mutate(VCF0894 = ifelse(VCF0894 == 9, NA, VCF0894)) |>
+  mutate(VCF0302 = ifelse(VCF0302 %in% c(8,9), NA, VCF0302))|>
   select(-where(~sum(is.na(.)) > 1000)) |>
-  select(-c(VCF0004,VCF0901b, VCF0013,VCF0014, VCF0705, VCF0303))
+  select(-c(VCF0004,VCF0901b, VCF0013,VCF0014, VCF0705, VCF0303,VCF0218,VCF0224,
+            VCF0291,VCF0218,VCF0218,VCF0211,VCF0290,VCF0212))
 
 anes_2000_2020$VCF0302 <- factor(anes_2000_2020$VCF0302)
-
-# Note: set up outcome variable as factor for classification - maybe make into a step?
-
-# Note: step_num2factor interferes with LASSO since testing data isn't factorized 
-
-# anes_2000_2020$VCF0705 <- as.character(anes_2000_2020$VCF0705)
-
-# anes_2000_2020$VCF0705 <- fct(anes_2000_2020$VCF0705)
 
 ```
 
@@ -190,10 +184,11 @@ anes_2000_2020$VCF0302 <- factor(anes_2000_2020$VCF0302)
 ```{r}
 #|label: random forests model, using VCF0302 as dependent variable
 
-
+# Only 39 obs missing in VCF0302 out of thousands; shouldn't impact result if dropped
 anes_2000_2020 <- 
   anes_2000_2020 |>
-  mutate(VCF9999 = importance_weights(VCF9999)) # create recipe case weight 
+  mutate(VCF9999 = importance_weights(VCF9999)) |> # create recipe case weight
+  filter(is.na(VCF0302) == FALSE)
 
 anes_split <- initial_split(anes_2000_2020)
 
@@ -211,7 +206,7 @@ anes_recipe <-
 anes_rf_mod <- 
     rand_forest(
       trees = 500,
-      mtry = 5,
+      mtry = 10,
       min_n = 4
     ) |>
   set_mode(mode = "classification") |>
@@ -231,7 +226,7 @@ anes_rf_resamples <-
   anes_rf_wf |>
   fit_resamples(resamples = anes_folds)
 
-collect_metrics(anes_rf_resamples)
+collect_metrics(anes_rf_resamples) # dropping obs doesn't hurt metrics significantly
 
 anes_rf_final <- 
   anes_rf_wf |>
@@ -245,9 +240,16 @@ anes_vip_plot <-
   extract_fit_parsnip() |>
   vip(num_features = 20)
 
-anes_vip_plot + ggtitle("Variable importance in determining American party preference") 
+anes_vip_plot + 
+  labs(
+    title = str_wrap("Variable importance in determining American voter political identification"),
+    subtitle = "",
+    caption = "")
+    
 
-ggsave(filename = "anes_rf_vip_plot_VCF0302.png")
+ggsave(filename = "anes_rf_vip_plot_VCF0302.png", width = 11, height = 8.5)
+
+ggsave(filename = "anes_rf_vip_plot_VCF0302.pdf",width = 11, height = 8.5)
 
 anes_rf_final_wf <- 
   anes_rf_final |>
@@ -274,14 +276,14 @@ anes_rf_predictions |>
     estimate = .pred_class
   )
 
-anes_rf_predictions |>
-  roc_auc()
+anes_rf_confmat <-
+  conf_mat(data = anes_rf_predictions,
+         truth = VCF0302,
+         estimate = .pred_class)
 
+anes_rf_confmat # values for markdown table
 
 ```
-→ A | warning: ✖ No observations were detected in `truth` for level: 8.
-               ℹ Computation will proceed by ignoring those levels
-
 
 ## Model 2: Bagged Trees with hyperparameter tuning 
 
@@ -313,11 +315,11 @@ anes_bagged_trees_resamples <-
 collect_metrics(anes_bagged_trees_resamples) 
 
 anes_bagged_trees_resamples |>
-  show_best(metric = "roc_auc") # I have case weights, why use hand_till estimator?
+  show_best(metric = "accuracy")
 
 best_bagged_value <- 
   anes_bagged_trees_resamples |>
-  select_best(metric = "roc_auc")
+  select_best(metric = "accuracy")
 
 anes_bagged_best_wf <- 
   anes_bagged_trees_wf |>
@@ -333,19 +335,43 @@ anes_bagged_finalized_fit <-
   anes_bagged_best_wf |>
   last_fit(anes_split)
 
-anes_fitted_wf <- 
+anes_bagged_fitted_wf <- 
   anes_bagged_finalized_fit |>
   extract_workflow()
 
-anes_bagged_prediction <-
-  predict(anes_bagged_finalized_fit, new_data = anes_test) |>
+anes_bagged_predictions <-
+  predict(anes_bagged_fitted_wf, new_data = anes_test) |>
   bind_cols(
-    predict(anes_bagged_finalized_fit, new_data = anes_test, type = "prob"),
+    predict(anes_bagged_fitted_wf, new_data = anes_test, type = "prob"),
     anes_test |>
     select(VCF0302)
   )
 
+select(anes_bagged_predictions, VCF0302, .pred_class, starts_with(".pred"))
+
+anes_bagged_predictions |>
+  precision(
+    truth = VCF0302,
+    estimate = .pred_class)
+
+anes_bagged_predictions |>
+  recall(
+    truth = VCF0302,
+    estimate = .pred_class
+  )
+
+anes_bagged_confmat <-
+  conf_mat(data = anes_bagged_predictions,
+         truth = VCF0302,
+         estimate = .pred_class)
+
+anes_bagged_confmat # values for markdown table
+
+
+
 ```
+
+# Bagged Trees vs Random Forests
 
 
 ## Model 3: Naïve Classification Decision Tree 
@@ -371,95 +397,16 @@ anes_cart_fit <-
   fit(data = anes_train)
 
 # create a tree
+
 rpart.plot::rpart.plot(x = anes_cart_fit$fit$fit$fit)
 
 ```
-
-
-## Model 4: Elastic Net Regression Logistic Classification
-
-Open issue: having trouble making Elastic graph even with textbook, need to talk to Mia or Aaron 
-
-```{r}
-#|label: ENR Classification using multinomial regression
-
-
-# Notes: using glmnet engine and low penalty with 50/50 ridge/LASSO
-
-anes_elastic_function <- 
-  function(penalty){
-    
-anes_elastic_recipe <- 
-  anes_recipe |>
-  step_normalize(all_numeric_predictors())
-  
-anes_elastic_model <- 
-  multinom_reg(penalty = penalty, mixture = .5) |>
-  set_mode(mode = "classification") |>
-  set_engine(engine = "glmnet")  
-
-anes_elastic_wf <- 
-  workflow() |>
-  add_recipe(recipe = anes_lasso_recipe) |>
-  add_model(spec = anes_lasso_model) |> 
-  add_case_weights(VCF9999)
-
-  # see tidy coef fits 
-
-anes_elastic_wf |>
-  fit(data = anes_train) |>
-  extract_fit_parsnip() |>
-  tidy() |>
-  mutate(penalty = penalty)
-
-
-}
-
-# iterate over possible penalties for graph
-
-candidate_penalties <- seq(0,2,1)
-
-elastic_penalties <- 
-  map_dfr(.x = candidate_penalties,
-          .f = anes_elastic_function(.x)
-          )
-
-ggplot() +
-  geom_line(data = filter(elastic_penalties, term != "(Intercept)"),
-            aes(x = penalty, y = estimate, group = term)) + 
-  geom_point(data = filter(elastic_penalties, term != "(Intercept)"),
-             aes(x = penalty, y = estimate)) +
-  geom_label_repel(data = filter(elastic_penalties, 
-                                 term != "(Intercept)", 
-                                 estimate != 0),
-                   aes(x = penalty, y = estimate, label = term)
-                   )
-
-
-
-anes_lasso_predictions <-  
-  bind_cols(
-    anes_test,
-    predict(lasso_glm_fit, new_data = anes_test),
-    predict(lasso_glm_fit, new_data = anes_test, type = "prob")
-    )
-
-select(anes_lasso_predictions, VCF0705, starts_with(".pred"))
-
-```
-Getting this error trying to test predictive models for all models:
-
-Error in `step_num2factor()`:
-! The following required column is missing from `new_data` in step
-  'num2factor_ug3md': VCF0705.
 
 
 ## Using knowledge from above to predict Korean voter sentiment 
 
 ```{r}
 #| label: setup for using korean survey data
-
-# Note: Follow instructions in icpsr R file
 
 load("data/38577-0001-Data.rda")
 
@@ -577,6 +524,9 @@ icpsr_reduced <-
          PARTYLR = factor(PARTYLR)
   )
 
+icpsr_reduced |>
+  count(is.na(PARTYLR))
+
 # PARTYLR is outcome variable 
 
 icpsr_split <- 
@@ -587,14 +537,16 @@ icpsr_train <- training(icpsr_split)
 
 icpsr_test <- testing(icpsr_split)
 
-korean_folds <- vfold_cv(data = icpsr_train, v = 5)
+icpsr_folds <- vfold_cv(data = icpsr_train, v = 5)
 
-korean_recipe <-
+
+
+
+icpsr_recipe <-
   recipe(PARTYLR~., data = icpsr_train) |>
-  step_impute_bag(PARTYLR) |>
   step_impute_bag(all_predictors(), trees = 2) # can't go more than 2 trees or else runtime issues
 
-korean_model <-
+icpsr_model <-
   rand_forest(
     trees = 500,
     mtry = 5,
@@ -607,29 +559,47 @@ korean_model <-
     num.threads = 4
   )
   
-korean_rf_wf <- 
+icpsr_rf_wf <- 
   workflow() |>
-  add_recipe(korean_recipe) |>
-  add_model(korean_model) |>
+  add_recipe(icpsr_recipe) |>
+  add_model(icpsr_model) |>
   add_case_weights(FINALWT)
 
-korean_resamples <- 
-  korean_rf_wf |>
-  fit_resamples(resamples = korean_folds)
+icpsr_resamples <- 
+  icpsr_rf_wf |>
+  fit_resamples(resamples = icpsr_folds)
 
-collect_metrics(korean_resamples) # the model sucks....
+collect_metrics(icpsr_resamples) # the model sucks....
 
-korean_rf_final <- 
-  korean_rf_wf |>
+icpsr_rf_final <- 
+  icpsr_rf_wf |>
   last_fit(icpsr_split)
 
-korean_vip_plot <- 
-  korean_rf_final |>
+icpsr_vip_plot <- 
+  icpsr_rf_final |>
   extract_fit_parsnip() |>
   vip(num_features = 20)
 
-korean_vip_plot + ggtitle("Variable importance in determining Korean voter party preference") 
+icpsr_vip_plot +
+  labs(
+    title = str_wrap("Variable importance in determining South Korean voter political identification"),
+    subtitle = "",
+    caption = "")
 
-ggsave(filename = "korean_vip_plot.png"
+ggsave(filename = "icpsr_vip_plot.png", width = 11, height = 8.5)
+
+ggsave(filename = "icpsr_vip_plot.pdf", width = 11, height = 8.5)
+
+```
+
+## Comparison of American voter identification and South Korean voter identification
+
+```{r}
+#| label: vip plot comparison 
+
+anes_vip_plot +
+  labs(title ="American Voter") + icpsr_vip_plot + 
+  labs(title = "South Korean Voter")
+
 
 ```
