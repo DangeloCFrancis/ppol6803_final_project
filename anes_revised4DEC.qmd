@@ -2,17 +2,32 @@
 title: "Predicting party identification using socioeconomic characterisitcs"
 author: "D'Angelo Francis; Su Yeon Seo; Yuxiang 'Nathan' Su"
 format: html
+embed-resources: true
+code-fold: true
+code-overflow: scroll
+code-line-numbers: true
+toc: true
 ---
 
 
 ## Purpose
 
 Our research project seeks to identify the key characteristics to identify and predict how a voter votes. 
- This project utilizes a Classification and Regression Tree model, and 'glm' (logistic and probit regression) models to predict the probability that a survey respondent voted 'conservatively' or 'liberally'[^1]. The primary data for analysis and modeling will be survey data from the [American National Election Studies](https://electionstudies.org/), a collaboration between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), Stanford University, and the National Science Foundation (NSF).  
+This project utilizes a Classification and Regression Tree (CART) model, random forests model, and bootstrap aggregation (bagged) trees model to predict the probability that a survey respondent's political identification. 
 
-For our model, we plan on using questions that the ANES asks about a candidate that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the outcome variable our model will predict. The goal of our models are to precisely predict which a voter voted for using the responses from survey questions asking about policies, such as transgender rights, gun control, reproductive rights, etc. We will incorporate a variable importance analysis to deduce which survey topics and demographic characteristics are the best indicators of voters' candidate preference.
+## Methodology 
 
-## Setting up our models 
+We trained our models not only for the United States, but for the Republic of Korea ("South Korea") as well. The data for our US models is survey data from the American National Election Studies, or ANES,  [Time Series Cumulative Data File 1948-2020](https://electionstudies.org/data-center/anes-time-series-cumulative-data-file/), a collaboration between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), Stanford University, and the National Science Foundation (NSF). For the Korean models, we used survey data from the Inter-University Consortium for Political and Social Research (ICPSR) [Korean General Social Survey 2003-2021](https://www.icpsr.umich.edu/web/ICPSR/studies/38577)—or KGSS. 
+
+For both models, we used questions that the ANES and KGSS asks survey respondents about political leanings (e.g., *"Generally speaking, do you usually think of yourself as a Republican, a Democrat, an Independent, or what?"*) as the outcome variable our model will predict. The goal of the models are to *precisely* predict the political ID of survey respondents using responses from survey questions asking about politics, social sentiment, and demographic characteristics. 
+
+We use variable importance analysis to interpret the results from our tree models, and which survey questions and demographic characteristics are the best predictors of voters' political ID.
+
+### Using 'political ID' versus 'vote'
+
+The original outcome variable for our models used questions that asked which party a survey respondent voted for. We decided *against* using such questions are variables since it is likely that a party's candidate could influence who a survey respondent votes for *despite* political ID. We believe that political ID is a more reliable choice for our model to predict, though this does not rule out predicting voting behavior in the future.
+
+## Bulding a U.S. Voter Political Identification Model
 
 ```{r}
 #| label: library setup 
@@ -47,13 +62,14 @@ library(ggarchery) # install.packages("ggarchery") for easy arrows
 theme_set(theme_clean())
 ```
 
+For the US model, we knew that it wouldn't make sense to incorporate survey questions from over 70 years ago. Responses to questions about topics like LGBTQ rights, the Black Power movement, or the threat of communism would likely hurt the models predictive performance. We decided to narrow the scope of our models to the years 2000-2020 to take advantage of the significant, but relatively smaller political shift over the last 20 years rather than 76 years.  
+
+The cumulative data set contains over one thousand variables—each representing a question asked to survey respondents. For a variable to appear in the cumulative data set, it must be a question asked in at least three surveys. Due to narrowing the time frame of our US models, some variables were removed due to having no observations. We used a threshold of one thousand "NAs" to select whether a variable is included in the model or not. If a variable has over one thousand NAs, it was dropped from the final modeling set. Of the 1,030 variables and 68,224 observations in the original data set, our data set consists of 72 variables (including case weights and outcome variable) and 9,741 observations—or less than one percent of the variables available and approximately 14 percent of the original observations, respectively.
+
 ```{r}
 #| label: ANES data loading and variable selection 
 #| warning: false
 #| message: false
-
-
-# read data in - see README for link
 
 # read data in - see README for link
 
@@ -179,10 +195,14 @@ anes_2000_2020$VCF0302 <- factor(anes_2000_2020$VCF0302)
 ```
 
 
-## Model 1: Random Forests model with resampling
+### Model 1: Random Forests model with resampling
+
+We used a random forests model with resampling to extract the most important survey question in determining a survey respondent's political ID. Our outcome variable **VCF0302**—*Party Identification of Respondent*— had 39 missing observations. The nature of survey data suggests that this data may not be missing at random, so we ran the models with the missing observations and without the observations. Since there were no significant changes in the models, we dropped the missing observations in **VCF0302**. To deal with missing information in our predictor variables, we used `step_impute_bag()` to 'fill in' the missing information. Since the number of variables made using a high number of trees *very* difficult with respect to code runtime, we settled on using `trees = 5` for all predictor imputations.
 
 ```{r}
-#|label: random forests model, using VCF0302 as dependent variable
+#| label: random forests model, using VCF0302 as dependent variable
+#| warning: false
+#| message: false
 
 # Only 39 obs missing in VCF0302 out of thousands; shouldn't impact result if dropped
 anes_2000_2020 <- 
@@ -227,6 +247,13 @@ anes_rf_resamples <-
   fit_resamples(resamples = anes_folds)
 
 collect_metrics(anes_rf_resamples) # dropping obs doesn't hurt metrics significantly
+```
+The accuracy of the random forest model is impressive—68.6 percent! Our roc_auc value is ~.78, indicating a *very* good model. However, our brier score is a bit high at .22. 
+
+```{r}
+#| label: check metric for last model fit
+#| message: false
+#| warning: false
 
 anes_rf_final <- 
   anes_rf_wf |>
@@ -234,6 +261,15 @@ anes_rf_final <-
 
 anes_rf_final |>
   collect_metrics()
+```
+Assessing out final fit metrics, our metrics still point to an excellent predictive model for *VCF0302* using random forests. Now, let's look at which variables—or questions—are driving this model's stellar performance.
+
+#### Random Forest variable importance
+
+```{r}
+#| label: variable importance plot
+#| message: false
+#| warning: false
 
 anes_vip_plot <- 
   anes_rf_final |>
@@ -251,6 +287,53 @@ ggsave(filename = "anes_rf_vip_plot_VCF0302.png", width = 11, height = 8.5)
 
 ggsave(filename = "anes_rf_vip_plot_VCF0302.pdf",width = 11, height = 8.5)
 
+```
+
+For our variable importance plot, we selected the top 20 variable that help our model's accuracy. Leading by a wide margin is VCF9205—*Which party would do a better job handling the nation's economy?*. Rounding out the top 5 are: 
+
+- **VCF0801**: *Thermometer index - Rating of liberals and conservatives*[^1]
+- **VCF0849**: *Liberal-Conservative position 1984- Collapsed*[^2]
+- **VCF9217**: *Does R approve or disapprove of the way current U.S. President is handling foreign relations?*
+- **VCF0101**: *Respondent's Age*
+
+Most of the questions that contributed to the model's performance are thermometer questions (in order of importance):
+
+- **VCF0253**- Feminists, 
+- **VCF0210**- Labor unions
+- **VCF0234**- Christian fundamentalists 
+- **VCF0228**- Congress
+- **VCF0209**- Big Business 
+- **VCF0232**- Gays and lesbians 
+- **VCF0206**- Blacks 
+- **VCF0207**- Whites 
+
+We anticipate that question **VCF0838**-*By law, when should abortion be allowed?*— could be higher in variable importance once ANES releases a version including election data from 2022 and 2024. Both years had major impacts on voting trends political identification in the United States, as the United States Supreme Court under a 6-3 conservative majority voted to overturn *Roe v. Wade* in June 2022, which guaranteed the right to an abortion across the United States.[^3] The 2024 Presidential election featured Democratic campaigns attacking Republican candidates about Project 2025 and plans for a national abortion ban.[^4] 
+
+We also anticipate that question **VCF0867a**—*Affirmative Action in hiring/promotion*—may also increase in importance in future editions of the ANES survey given the Supreme Court also overturned precedent for affirmative action in the college application process in June 2023.[^5]
+
+We were surprised to see questions **VCF0830**—*Aid to Blacks Scale*— and **VCF0886**—*Federal Spending-Poor/Poor People*— appear on the variable importance graph. Most surprising is that question **VCF9239**-*How important is gun control issue to respondent*— is at the very bottom below the aforementioned questions. Is this a case of overestimating the effect of gun control on voter political ID, specifically in the media?
+
+Surprisingly, question **VCF0105b**—*Four category Race-Ethnicity Summary*, appears closer to the bottom. We are curious as to whether race is also overestimated as a key variable in a voter's political identification. The rightward trend we saw in the 2024 Presidential election seems to suggests that race isn't as big a divider as it appears, at least in the current political *zeitgeist*.[^6]
+
+Now, we can test the model's actual predictive performance for precision and recall.
+
+[^1]: A survey 'thermometer' is a scale (0-100) which respondents are asked how warmly or coldly they perceive the subject of the thermometer question. Responses between 0-96 degrees were coded 'as-is' and responses between 97-100 degrees were coded as being 97-100 degreees (binned). 
+
+[^2]: To clarify, this question was asked from 1984 *and onward*, not only in the 1984 survey.
+
+[^3]: [Roe v. Wade, Center for Reproductive Rights June 2022](https://reproductiverights.org/roe-v-wade/#:~:text=In%20June%202022%2C%20in%20a,federal%20constitutional%20right%20to%20abortion.)
+
+[^4]: Sherman, C., [Project 2025: What does the rightwing blueprint say about abortion?](https://www.theguardian.com/us-news/article/2024/aug/05/project-2025-abortion), 5 August 2024
+
+[^5]: Totenberg, N., [Supreme Court guts affirmative action, effectively ending race-conscious admissions](https://www.npr.org/2023/06/29/1181138066/affirmative-action-supreme-court-decision)
+
+[^6]: Sides, J., [How to think about the "racial realignment" in U.S. politics](https://goodauthority.org/news/election-2024-racial-realignment-us-politics/), 18 November 2024
+
+
+```{r}
+#| label: random forest class probability predictions 
+
+
 anes_rf_final_wf <- 
   anes_rf_final |>
   extract_workflow()
@@ -264,6 +347,22 @@ anes_rf_predictions <-
   )
 
 select(anes_rf_predictions, VCF0302, starts_with(".pred"))
+
+```
+This tibble provides the predicted 'class' of each observation in the training set. Each class corresponds to the following: 
+
+- '1' - Republican 
+- '2' - Independent 
+- '3' - No preference;none;neither
+- '4' - Other 
+- '5' - Democrat 
+
+The value in **VCF0302** is the 'true' class, and the titular **.pred_class** is the predicted class given by the model.
+
+```{r}
+#| label: random forest precision and recall estimates with confusion matrix 
+#| warning: false
+#| message: false
 
 anes_rf_predictions |>
   precision(
@@ -281,14 +380,21 @@ anes_rf_confmat <-
          truth = VCF0302,
          estimate = .pred_class)
 
-anes_rf_confmat # values for markdown table
+anes_rf_confmat
 
 ```
+Our precision is approximately 66 percent using the [macro estimator](https://yardstick.tidymodels.org/articles/multiclass.html), almost similar to our accuracy. Our recall rate, or 'true positive rate' (also using the macro estimator), is decent at approximately 41.5 percent. 
 
-## Model 2: Bagged Trees with hyperparameter tuning 
+Overall, the random forest model yields good results in predicting voter political identification in the United States. But, could we do better by using a bootstrap aggreggation approach with hyperparameter tuning?
+
+### Model 2: Bagged Trees with hyperparameter tuning and resamples
+
+Now, we are building a bagged trees model using hyperparameter tuning and resampling to compare which 'tree' model is the best.
 
 ```{r}
-#|label: bagging with hp tuning
+#| label: bagging with hp tuning and resample
+#| warning: false
+#| message: false
 
 anes_bagged_trees_model <- 
   bag_tree(cost_complexity = tune(), tree_depth = tune()) |>
@@ -313,9 +419,25 @@ anes_bagged_trees_resamples <-
   )
 
 collect_metrics(anes_bagged_trees_resamples) 
+```
+Since we are tuning the bagged trees model `tree_depth()` and `cost_complexity()`, we have multiple models to choose from. We can use `show_best()` and `select_best()` to isolate the model we want to use for predictions.
+
+```{r}
+#| label: showing best hyperparameter for bagged trees model
+#| warning: false
+#| message: false
 
 anes_bagged_trees_resamples |>
   show_best(metric = "accuracy")
+```
+Using accuracy as the metric[^7], our fifth model where mean accuracy is ~67 percent, `tree_depth = 8`,and `cost_complexity = ~3.16e-06` is the best model. Now we can use `select_best()` and finalize our bagged trees model.
+
+[^7]: The reason why we are using accuracy as a metric and not roc_auc is because of the estimator used. When we use accuracy, `yardstick` uses a 'multiclass' estimator since it detects that the outcome variable is a survey response with multiple answers, each coded as factors. When we use roc_auc, `yardstick` uses the 'hand_till' estimator, which does not work well with case weights. 
+```{r}
+#| label: selecting and using best parameters 
+#| warning: false
+#| message: false
+
 
 best_bagged_value <- 
   anes_bagged_trees_resamples |>
@@ -329,7 +451,9 @@ anes_bagged_best_wf <-
 Now, we run our bagged tree model with the best parameters given by hyperparameter tuning: 
 
 ```{r}
-#|label: applying hyperparametering tuning to final bagged tree model
+#| label: applying hyperparametering tuning to final bagged tree model
+#| warning: false
+#| message: false
 
 anes_bagged_finalized_fit <- 
   anes_bagged_best_wf |>
@@ -349,6 +473,13 @@ anes_bagged_predictions <-
 
 select(anes_bagged_predictions, VCF0302, .pred_class, starts_with(".pred"))
 
+```
+
+```{r}
+#| label: precision and recall of bagged trees model with best hyperparameter 
+#| warning: false
+#| message: false
+
 anes_bagged_predictions |>
   precision(
     truth = VCF0302,
@@ -367,56 +498,47 @@ anes_bagged_confmat <-
 
 anes_bagged_confmat # values for markdown table
 
-
-
 ```
+The precision of this model after hyperparamter tuning and resampling is approximately 48 percent. The recall rate is approximately 41 percent. 
 
-# Bagged Trees vs Random Forests
+## Bagged Trees vs Random Forests
+
+Both models had reasonably high accuracy and recall rates. However, the random forest model beats the bagged trees model on the precision tie breaker. The precision of the random forest model is almost 20 percentage points higher than that of the bagged trees model. We believe this can be attributed to the nature of each model. Random forest models 'de-correlate' the trees and introduce some randomness Each tree is made worse off from before to improve the overall model fit. Bagged trees cannot do this since it uses bootstrapping to build its trees. Since the ANES survey is bound to have highly correlated covariates, it is no surprise the the random forest model outperformed the bagged trees model with respect to precision.
+
+## Comparing Apple Pie to *Injeolmi*: Are American and South Korean survey respondents comparable with respect to voter party ID? 
+
+Our random forests model did reasonably well in predicting the political ID of American survey respondents. But the United States does not have a monopoly on democracy. 2024 is known as the "Year of Elections, as more than 60 countries had elections.[^8] One of these countries is South Korea. We believe that South Korea and the United States have a comparable political climate. Not only has South Korea experienced an presidential election, it has also recently experienced an attempted coup by the sitting president, Yoon Suk Yeol[^9]. Do these political similarities stem from voters' political identification stemming from the same category of variables as American voters?
+
+[^8]: Wike, R.,Fagan,M.,Clancy,L.; [Global Elections in 2024: What We Learned in a Year of Political Disruption](https://www.pewresearch.org/global/2024/12/11/global-elections-in-2024-what-we-learned-in-a-year-of-political-disruption/), 11 December 2024
+
+[^9]: Please find reputable source, ideally Korean for best coverage (not that I don't trust Western media ofc)
 
 
-## Model 3: Naïve Classification Decision Tree 
+### KGSS Survey Data 
+
+The KGSS Survey data ranges from 2003 to 2021; we found no need to truncate the time frame. The biggest hurdle to identifying South Korean voter political ID was variable selection. The main data set from ICPSR contains over three thousand variables and approximately 21,000 variables. Due to time constraints, we were unable to fully explore the data set, and settled with selecting any variable that is plausibly connected to political affiliation.
+Of the 3,125 variables, we selected 91 variables (~.03 percent) from the main data set. We did not have to drop observations from the reduced data set. For any missing values The outcome variable for the KGSS model is **PARTYLR**—*Political Orientation*, which is coded as the following: 
+
+- '1'- "Very liberal"
+- '2'- "Somewhat liberal"
+- '3'- "Neither liberal or conservative"
+- '4'- "Somewhat conservative"
+- '5'- "Very conservative"
 
 ```{r}
-#|label: decision tree 
-
-# Note: maybe use tuning here? Model doesn't say a lot here (but just enough)
-
-anes_cart_model <- 
-  decision_tree() |>
-  set_engine(engine = "rpart") |>
-  set_mode(mode = "classification")
-
-anes_cart_wf <- 
-  workflow() |>
-  add_recipe(anes_recipe) |>
-  add_model(anes_cart_model) |>
-  add_case_weights(VCF9999)
-  
-anes_cart_fit <- 
-  anes_cart_wf |>
-  fit(data = anes_train)
-
-# create a tree
-
-rpart.plot::rpart.plot(x = anes_cart_fit$fit$fit$fit)
-
-```
-
-
-## Using knowledge from above to predict Korean voter sentiment 
-
-```{r}
-#| label: setup for using korean survey data
+#| label: setup for using KGSS data
+#| message: false
+#| warning: false
 
 load("data/38577-0001-Data.rda")
 
-icpsr_korean_survey <-
+kgss <-
   da38577.0001
 
 # Variable selection data cleaning for NA values 
 
-icpsr_reduced <- 
-  icpsr_korean_survey |>
+kgss_reduced <- 
+  kgss_korean_survey |>
   select(
     PARTYLR, FINALWT,SEX,AGE, MARITAL,EMPLY,EDUC,TECHHIGH,SPEDUC,PAEDUC,MAEDUC,
     RINCOME,INDUSTRY,OCC,SATFIN,FINALTER,STDLIVIN,
@@ -428,8 +550,8 @@ icpsr_reduced <-
     GENCONF1:GENCONF5,OLDWELF1:OLDWELF3,OLDCONT1:OLDCONT3,CONGOVT,NATVSBUS,CURGOV,
     NORTHPOL, DEMOATT1:DEMOATT4)
     
-icpsr_reduced <-
-  icpsr_reduced |>
+kgss_reduced <-
+  kgss_reduced |>
   mutate(FINALWT = importance_weights(FINALWT),
          SEX = ifelse(SEX %in% c("-1","-8"), NA, SEX), 
          AGE = ifelse(AGE %in% c("-1","-8"), NA, AGE),
@@ -524,29 +646,23 @@ icpsr_reduced <-
          PARTYLR = factor(PARTYLR)
   )
 
-icpsr_reduced |>
-  count(is.na(PARTYLR))
-
 # PARTYLR is outcome variable 
 
-icpsr_split <- 
-  icpsr_reduced |>
+kgss_split <- 
+  kgss_reduced |>
   initial_split(prop = .75)
 
-icpsr_train <- training(icpsr_split) 
+kgss_train <- training(kgss_split) 
 
-icpsr_test <- testing(icpsr_split)
+kgss_test <- testing(kgss_split)
 
-icpsr_folds <- vfold_cv(data = icpsr_train, v = 5)
+kgss_folds <- vfold_cv(data = kgss_train, v = 5)
 
+kgss_recipe <-
+  recipe(PARTYLR~., data = kgss_train) |>
+  step_impute_bag(all_predictors(), trees = 5) # can't go more than 5 trees or else runtime issues
 
-
-
-icpsr_recipe <-
-  recipe(PARTYLR~., data = icpsr_train) |>
-  step_impute_bag(all_predictors(), trees = 2) # can't go more than 2 trees or else runtime issues
-
-icpsr_model <-
+kgss_model <-
   rand_forest(
     trees = 500,
     mtry = 5,
@@ -559,36 +675,94 @@ icpsr_model <-
     num.threads = 4
   )
   
-icpsr_rf_wf <- 
+kgss_rf_wf <- 
   workflow() |>
-  add_recipe(icpsr_recipe) |>
-  add_model(icpsr_model) |>
+  add_recipe(kgss_recipe) |>
+  add_model(kgss_model) |>
   add_case_weights(FINALWT)
 
-icpsr_resamples <- 
-  icpsr_rf_wf |>
-  fit_resamples(resamples = icpsr_folds)
+kgss_resamples <- 
+  kgss_rf_wf |>
+  fit_resamples(resamples = kgss_folds)
 
-collect_metrics(icpsr_resamples) # the model sucks....
+collect_metrics(kgss_resamples) # the model sucks....?
+```
+Our random forest model for South Korean voter political identification does not perform as well as we thought. Its accuracy is approximately 37 percent, has a mediocre brier score, and the roc_auc score leaves more to be desired. Let's look into the top 20 variables that our Korean model considers most important to its function.
 
-icpsr_rf_final <- 
-  icpsr_rf_wf |>
-  last_fit(icpsr_split)
 
-icpsr_vip_plot <- 
-  icpsr_rf_final |>
+### KGSS Variable Importance 
+
+```{r}
+#| label: kgss vip plot
+#| warning: false
+#| message: false
+
+kgss_rf_final <- 
+  kgss_rf_wf |>
+  last_fit(kgss_split)
+
+kgss_vip_plot <- 
+  kgss_rf_final |>
   extract_fit_parsnip() |>
   vip(num_features = 20)
 
-icpsr_vip_plot +
+kgss_vip_plot +
   labs(
-    title = str_wrap("Variable importance in determining South Korean voter political identification"),
+    title = str_wrap("Variable importance in determining South Korean political identification"),
     subtitle = "",
     caption = "")
 
-ggsave(filename = "icpsr_vip_plot.png", width = 11, height = 8.5)
+ggsave(filename = "kgss_vip_plot.png", width = 11, height = 8.5)
 
-ggsave(filename = "icpsr_vip_plot.pdf", width = 11, height = 8.5)
+ggsave(filename = "kgss_vip_plot.pdf", width = 11, height = 8.5)
+
+```
+The KGSS random forest model yields completely different results than the ANES model. The top 5 variables are: 
+
+- **AGE**-*Respondent's age*
+- **OCC**-*Respondent's occupation*
+- **INDUSTRY**-*Respondent's industry*
+- **CURGOV**-*Respondent's assessment of current government's state affair administrations *
+- **RINCOME**-*Respondent's income*
+
+The ANES model also included questions about respondent's age, education, occupation, and income. So, why does the ICPSR random forest model heavily use a respondent's demographics rather than their political opinion? One reason can come from the survey composition itself. The ANES survey is a survey geared toward more political questions and is administered during presidential elections. The KGSS survey is a more general survey of South Korean society. This is one explanation we have for why the ANES models were great at predicting a respondent's political ID compared to the KGSS.
+
+
+## Testing KGSS predictive model 
+
+```{r}
+#| label: assessing korean model 
+
+
+kgss_final_wf <- 
+  kgss_rf_final |>
+  extract_workflow()
+
+kgss_rf_predictions <-
+  predict(kgss_final_wf, new_data = kgss_test) |>
+  bind_cols(
+    predict(kgss_final_wf, new_data = kgss_test, type = "prob"),
+    kgss_test |>
+    select(PARTYLR)
+  )
+
+select(kgss_rf_predictions, PARTYLR, .pred_class, starts_with(".pred"))
+
+```
+
+```{r}
+#| label: precision and recall of KGSS model 
+
+kgss_rf_predictions |>
+  precision(
+    truth = PARTYLR,
+    estimate = .pred_class)
+
+kgss_rf_predictions |>
+  recall(
+    truth = PARTYLR,
+    estimate = .pred_class
+  )
 
 ```
 
@@ -598,8 +772,14 @@ ggsave(filename = "icpsr_vip_plot.pdf", width = 11, height = 8.5)
 #| label: vip plot comparison 
 
 anes_vip_plot +
-  labs(title ="American Voter") + icpsr_vip_plot + 
-  labs(title = "South Korean Voter")
+  labs(title ="ANES Respondent") + kgss_vip_plot + 
+  labs(title = "KGSS Respondent")
 
 
 ```
+
+## Notes {.appendix}
+
+In the ANES model, we dropped variables where there were over one thousand NAs. This is because without dropping these variables, the model had ~230 variables with the class `logical`. A limitation of tidyrecipes is that there isn't a function like `step_num2factor()` to assist in converting logical columns to a type that is easily imputed.
+
+
