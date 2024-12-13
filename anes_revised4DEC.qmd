@@ -1,5 +1,5 @@
 ---
-title: "Predicting Electoral Outcomes using Demographic Characterisitcs"
+title: "Predicting party identification using socioeconomic characterisitcs"
 author: "D'Angelo Francis; Su Yeon Seo; Yuxiang 'Nathan' Su"
 format: html
 ---
@@ -15,7 +15,9 @@ For our model, we plan on using questions that the ANES asks about a candidate t
 ## Setting up our models 
 
 ```{r}
-#| label: setup 
+#| label: library setup 
+#| message: false
+#| warning: false
 
 set.seed(41224) # Euro style date for December 4,2024
 
@@ -26,6 +28,8 @@ library(tidymodels) # use case weights
 library(readxl)
 library(baguette)
 library(vip)
+library(pROC)
+library(srvyr)
 
 # visualization packages
 
@@ -41,6 +45,15 @@ library(ggarchery) # install.packages("ggarchery") for easy arrows
 # Global Options
 
 theme_set(theme_clean())
+```
+
+```{r}
+#| label: ANES data loading and variable selection 
+#| warning: false
+#| message: false
+
+
+# read data in - see README for link
 
 # read data in - see README for link
 
@@ -63,7 +76,7 @@ anes_2000_2020 <-
     VCF0014, # pre-election
     VCF0748, # voted on election day or before
     
-    # Dependent Variable
+    # Dependent Variable(s)
     VCF0302, # initial party identification response
     VCF0303, # party identification response
     VCF0705, # vote for president - major parties and other
@@ -157,7 +170,9 @@ anes_2000_2020 <-
   mutate(VCF0890 = ifelse(VCF0890 == 9, NA, VCF0890)) |>
   mutate(VCF0894 = ifelse(VCF0894 == 9, NA, VCF0894)) |>
   select(-where(~sum(is.na(.)) > 1000)) |>
-  select(-c(VCF0004,VCF0901b, VCF0013,VCF0014))
+  select(-c(VCF0004,VCF0901b, VCF0013,VCF0014, VCF0705, VCF0303))
+
+anes_2000_2020$VCF0302 <- factor(anes_2000_2020$VCF0302)
 
 # Note: set up outcome variable as factor for classification - maybe make into a step?
 
@@ -173,7 +188,7 @@ anes_2000_2020 <-
 ## Model 1: Random Forests model with resampling
 
 ```{r}
-#|label: random forests model
+#|label: random forests model, using VCF0302 as dependent variable
 
 
 anes_2000_2020 <- 
@@ -189,10 +204,10 @@ anes_test <- testing(x = anes_split)
 anes_folds <- vfold_cv(data = anes_train, v = 5)
 
 anes_recipe <- 
-  recipe(formula = VCF0705~ ., data = anes_train) |>
-  step_num2factor(VCF0705, levels = c("1","2","3")) |>
+  recipe(formula = VCF0302~ ., data = anes_train) |>
   step_impute_bag(all_predictors(), trees = 5)
   
+
 anes_rf_mod <- 
     rand_forest(
       trees = 500,
@@ -212,8 +227,6 @@ anes_rf_wf <-
   add_model(anes_rf_mod) |>
   add_case_weights(VCF9999)
 
-
-
 anes_rf_resamples <- 
   anes_rf_wf |>
   fit_resamples(resamples = anes_folds)
@@ -224,16 +237,51 @@ anes_rf_final <-
   anes_rf_wf |>
   last_fit(anes_split)
 
+anes_rf_final |>
+  collect_metrics()
+
 anes_vip_plot <- 
   anes_rf_final |>
   extract_fit_parsnip() |>
   vip(num_features = 20)
 
-anes_vip_plot + ggtitle("Variable Importance in Determining Voter Preference") 
+anes_vip_plot + ggtitle("Variable importance in determining American party preference") 
 
-ggsave(filename = "anes_rf_vip_plot.png")
+ggsave(filename = "anes_rf_vip_plot_VCF0302.png")
+
+anes_rf_final_wf <- 
+  anes_rf_final |>
+  extract_workflow()
+
+anes_rf_predictions <- 
+  predict(anes_rf_final_wf, new_data = anes_test) |>
+  bind_cols(
+    predict(anes_rf_final_wf, new_data = anes_test, type = "prob"),
+    anes_test |>
+    select(VCF0302)
+  )
+
+select(anes_rf_predictions, VCF0302, starts_with(".pred"))
+
+anes_rf_predictions |>
+  precision(
+    truth = VCF0302,
+    estimate = .pred_class)
+
+anes_rf_predictions |>
+  recall(
+    truth = VCF0302,
+    estimate = .pred_class
+  )
+
+anes_rf_predictions |>
+  roc_auc()
+
 
 ```
+→ A | warning: ✖ No observations were detected in `truth` for level: 8.
+               ℹ Computation will proceed by ignoring those levels
+
 
 ## Model 2: Bagged Trees with hyperparameter tuning 
 
@@ -265,7 +313,7 @@ anes_bagged_trees_resamples <-
 collect_metrics(anes_bagged_trees_resamples) 
 
 anes_bagged_trees_resamples |>
-  show_best(metric = "roc_auc")
+  show_best(metric = "roc_auc") # I have case weights, why use hand_till estimator?
 
 best_bagged_value <- 
   anes_bagged_trees_resamples |>
@@ -281,28 +329,21 @@ Now, we run our bagged tree model with the best parameters given by hyperparamet
 ```{r}
 #|label: applying hyperparametering tuning to final bagged tree model
 
-
-# issue: since predict() doesn't have VCF0705 
-
 anes_bagged_finalized_fit <- 
   anes_bagged_best_wf |>
   last_fit(anes_split)
 
-anes_bagged_pred <- 
+anes_fitted_wf <- 
   anes_bagged_finalized_fit |>
-  predict(new_data = anes_test)
+  extract_workflow()
 
-anes_bagged_finalized_fit |>
-  collect_metrics()
-
-anes_prediction <-
+anes_bagged_prediction <-
   predict(anes_bagged_finalized_fit, new_data = anes_test) |>
   bind_cols(
     predict(anes_bagged_finalized_fit, new_data = anes_test, type = "prob"),
     anes_test |>
-    select(VCF0705)
+    select(VCF0302)
   )
-
 
 ```
 
@@ -413,27 +454,182 @@ Error in `step_num2factor()`:
   'num2factor_ug3md': VCF0705.
 
 
-### LASSO Regression Model 
+## Using knowledge from above to predict Korean voter sentiment 
 
 ```{r}
-#| eval: false
+#| label: setup for using korean survey data
+
+# Note: Follow instructions in icpsr R file
+
+load("data/38577-0001-Data.rda")
+
+icpsr_korean_survey <-
+  da38577.0001
+
+# Variable selection data cleaning for NA values 
+
+icpsr_reduced <- 
+  icpsr_korean_survey |>
+  select(
+    PARTYLR, FINALWT,SEX,AGE, MARITAL,EMPLY,EDUC,TECHHIGH,SPEDUC,PAEDUC,MAEDUC,
+    RINCOME,INDUSTRY,OCC,SATFIN,FINALTER,STDLIVIN,
+    WORRY316,HELPPARE,KIDNUM10,PARSOL,CLASS,HOUSTYPE,HOUSOWNS,BLOODTYP,FEAR,
+    FAMILY,FRIENDS,LEISURE,MONEY,EDUCATN,HEALTH,RELIGION,GETAHEAD,
+    CULTBIAS1:CULTBIAS12,DONN1:DONN8,INDDIFF,IDEALFAM,MARIGOLD,WOMENCHD,
+    LOVCOHAB,WOMENROL,MARABORT,HLPECONO,CHDOBEYP,HUSBWIFE,MARFUTUR,CHDFUTUR,
+    FEJOBAFF,MAPAID,ABCHOOSE,HAPMAR,INFORAID,AIDOLD,
+    GENCONF1:GENCONF5,OLDWELF1:OLDWELF3,OLDCONT1:OLDCONT3,CONGOVT,NATVSBUS,CURGOV,
+    NORTHPOL, DEMOATT1:DEMOATT4)
+    
+icpsr_reduced <-
+  icpsr_reduced |>
+  mutate(FINALWT = importance_weights(FINALWT),
+         SEX = ifelse(SEX %in% c("-1","-8"), NA, SEX), 
+         AGE = ifelse(AGE %in% c("-1","-8"), NA, AGE),
+         MARITAL = ifelse(MARITAL %in% c("-1","-8"), NA, MARITAL),
+         EMPLY = ifelse(EMPLY %in% c("-1","-8"), NA, EMPLY),
+         EDUC = ifelse(EDUC %in% c("-1","-8"), NA, EDUC),
+         TECHHIGH = ifelse(TECHHIGH %in% c("-1","-8"), NA, TECHHIGH),
+         SPEDUC = ifelse(SPEDUC %in% c("-1","-8"),NA, SPEDUC),
+         PAEDUC = ifelse(PAEDUC %in% c("-1","-8"), NA, PAEDUC),
+         MAEDUC = ifelse(MAEDUC %in% c("-1","-8"), NA, MAEDUC),
+         RINCOME = ifelse(RINCOME %in% c("-1","-8"), NA, RINCOME),
+         INDUSTRY = ifelse(INDUSTRY %in% c("-1","-8"), NA, INDUSTRY),
+         OCC = ifelse(OCC %in% c("-1","-8"), NA, OCC),
+         SATFIN = ifelse(SATFIN %in% c("-1","-8"), NA, SATFIN),
+         FINALTER = ifelse(FINALTER %in% c("-1","-8"), NA, FINALTER),
+         STDLIVIN = ifelse(STDLIVIN %in% c("-1","-8"), NA, STDLIVIN),
+         WORRY316 = ifelse(WORRY316 %in% c("-1","-8"), NA, WORRY316),
+         HELPPARE = ifelse(HELPPARE %in% c("-1","-8"), NA, HELPPARE),
+         KIDNUM10 = ifelse(KIDNUM10 %in% c("-1","-8"), NA, KIDNUM10),
+         PARSOL = ifelse(PARSOL %in% c("-1","-8"), NA, PARSOL),
+         CLASS = ifelse(CLASS %in% c("-1","-8"), NA, CLASS),
+         HOUSTYPE = ifelse(HOUSTYPE %in% c("-1","-8"), NA, HOUSTYPE),
+         HOUSOWNS = ifelse(HOUSOWNS %in% c("-1","-8"), NA, HOUSOWNS),
+         BLOODTYP = ifelse(BLOODTYP %in% c("-1","-8"), NA, BLOODTYP),
+         FEAR = ifelse(FEAR %in% c("-1","-8"), NA, FEAR),
+         FAMILY = ifelse(FAMILY %in% c("-1","-8"), NA, FAMILY),
+         FRIENDS = ifelse(FRIENDS %in% c("-1","-8"), NA, FRIENDS),
+         LEISURE = ifelse(LEISURE %in% c("-1","-8"), NA, LEISURE),
+         MONEY = ifelse(MONEY %in% c("-1","-8"), NA, MONEY),
+         EDUCATN = ifelse(EDUCATN %in% c("-1","-8"), NA, EDUCATN),
+         HEALTH = ifelse(HEALTH %in% c("-1","-8"), NA, HEALTH),
+         RELIGION = ifelse(RELIGION %in% c("-1","-8"), NA, RELIGION),
+         GETAHEAD = ifelse(GETAHEAD %in% c("-1","-8"), NA, GETAHEAD),
+         CULTBIAS1 = ifelse(CULTBIAS1 %in% c("-1","-8"), NA, CULTBIAS1),
+         CULTBIAS2 = ifelse(CULTBIAS2 %in% c("-1","-8"), NA, CULTBIAS1),
+         CULTBIAS3 = ifelse(CULTBIAS3 %in% c("-1","-8"), NA, CULTBIAS3),
+         CULTBIAS4 = ifelse(CULTBIAS4 %in% c("-1","-8"), NA, CULTBIAS4),
+         CULTBIAS5 = ifelse(CULTBIAS5 %in% c("-1","-8"), NA, CULTBIAS5),
+         CULTBIAS6 = ifelse(CULTBIAS6 %in% c("-1","-8"), NA, CULTBIAS6),
+         CULTBIAS7 = ifelse(CULTBIAS7 %in% c("-1","-8"), NA, CULTBIAS7),
+         CULTBIAS8 = ifelse(CULTBIAS8 %in% c("-1","-8"), NA, CULTBIAS8),
+         CULTBIAS9 = ifelse(CULTBIAS9 %in% c("-1","-8"), NA, CULTBIAS9),
+         CULTBIAS10 = ifelse(CULTBIAS10 %in% c("-1","-8"), NA, CULTBIAS10),
+         CULTBIAS11 = ifelse(CULTBIAS11 %in% c("-1","-8"), NA, CULTBIAS11),
+         CULTBIAS12 = ifelse(CULTBIAS12 %in% c("-1","-8"), NA, CULTBIAS12),
+         DONN1 = ifelse(DONN1 %in% c("-1","-8"), NA, DONN1),
+         DONN2 = ifelse(DONN2 %in% c("-1","-8"), NA, DONN2),
+         DONN3 = ifelse(DONN3 %in% c("-1","-8"), NA, DONN3),
+         DONN4 = ifelse(DONN4 %in% c("-1","-8"), NA, DONN4),
+         DONN5 = ifelse(DONN5 %in% c("-1","-8"), NA, DONN5),
+         DONN6 = ifelse(DONN6 %in% c("-1","-8"), NA, DONN6),
+         DONN7 = ifelse(DONN7 %in% c("-1","-8"), NA, DONN7),
+         DONN8 = ifelse(DONN8 %in% c("-1","-8"), NA, DONN8),
+         INDDIFF = ifelse(INDDIFF %in% c("-1","-8"), NA, INDDIFF),
+         IDEALFAM = ifelse(IDEALFAM %in% c("-1","-8"), NA, IDEALFAM),
+         MARIGOLD = ifelse(MARIGOLD %in% c("-1","-8"), NA, MARIGOLD),
+         WOMENCHD = ifelse(WOMENCHD %in% c("-1","-8"), NA, WOMENCHD),
+         LOVCOHAB = ifelse(LOVCOHAB %in% c("-1","-8"), NA, LOVCOHAB),
+         WOMENROL = ifelse(WOMENROL %in% c("-1","-8"), NA, WOMENROL),
+         MARABORT = ifelse(MARABORT %in% c("-1","-8"), NA, MARABORT),
+         HLPECONO = ifelse(HLPECONO %in% c("-1","-8"), NA, HLPECONO),
+         CHDOBEYP = ifelse(CHDOBEYP %in% c("-1","-8"), NA, CHDOBEYP),
+         HUSBWIFE = ifelse(HUSBWIFE %in% c("-1","-8"), NA, HUSBWIFE),
+         MARFUTUR = ifelse(MARFUTUR %in% c("-1","-8"), NA, MARFUTUR),
+         CHDFUTUR = ifelse(CHDFUTUR %in% c("-1","-8"), NA, CHDFUTUR),
+         FEJOBAFF = ifelse(FEJOBAFF %in% c("-1","-8"), NA, FEJOBAFF),
+         MAPAID = ifelse(MAPAID  %in% c("-1","-8"), NA, MAPAID),
+         ABCHOOSE = ifelse(ABCHOOSE %in% c("-1","-8"), NA, ABCHOOSE),
+         HAPMAR = ifelse(HAPMAR %in% c("-1","-8"), NA, HAPMAR),
+         INFORAID = ifelse(INFORAID %in% c("-1","-8"), NA, INFORAID),
+         AIDOLD = ifelse(AIDOLD %in% c("-1","-8"), NA, AIDOLD),
+         GENCONF1 = ifelse(GENCONF1 %in% c("-1","-8"), NA, GENCONF1),
+         GENCONF2 = ifelse(GENCONF2 %in% c("-1","-8"), NA, GENCONF2),
+         GENCONF3 = ifelse(GENCONF3 %in% c("-1","-8"), NA, GENCONF3),
+         GENCONF4 = ifelse(GENCONF4 %in% c("-1","-8"), NA, GENCONF4),
+         GENCONF5 = ifelse(GENCONF5 %in% c("-1","-8"), NA, GENCONF5),
+         OLDWELF1 = ifelse(OLDWELF1 %in% c("-1","-8"), NA, OLDWELF1),
+         OLDWELF2 = ifelse(OLDWELF2 %in% c("-1","-8"), NA, OLDWELF2),
+         OLDWELF3 = ifelse(OLDWELF3 %in% c("-1","-8"), NA, OLDWELF3),
+         OLDCONT1 = ifelse(OLDCONT1 %in% c("-1","-8"), NA, OLDCONT1),
+         OLDCONT2 = ifelse(OLDCONT2 %in% c("-1","-8"), NA, OLDCONT2),
+         OLDCONT3 = ifelse(OLDCONT3 %in% c("-1","-8"), NA, OLDCONT3),
+         CONGOVT = ifelse(CONGOVT %in% c("-1","-8"), NA, CONGOVT),
+         NATVSBUS = ifelse(NATVSBUS %in% c("-1","-8"), NA, NATVSBUS),
+         CURGOV = ifelse(CURGOV %in% c("-1","-8"), NA, CURGOV),
+         NORTHPOL = ifelse(NORTHPOL %in% c("-1","-8"), NA, NORTHPOL),
+         DEMOATT1 = ifelse(DEMOATT1 %in% c("-1","-8"), NA, DEMOATT1),
+         DEMOATT2 = ifelse(DEMOATT2 %in% c("-1","-8"), NA, DEMOATT2),
+         DEMOATT3 = ifelse(DEMOATT3 %in% c("-1","-8"), NA, DEMOATT3),
+         DEMOATT4 = ifelse(DEMOATT4 %in% c("-1","-8"), NA, DEMOATT4),
+         PARTYLR = ifelse(PARTYLR %in% c("-1", "-8"), NA, PARTYLR),
+         PARTYLR = factor(PARTYLR)
+  )
+
+# PARTYLR is outcome variable 
+
+icpsr_split <- 
+  icpsr_reduced |>
+  initial_split(prop = .75)
+
+icpsr_train <- training(icpsr_split) 
+
+icpsr_test <- testing(icpsr_split)
+
+korean_folds <- vfold_cv(data = icpsr_train, v = 5)
+
+korean_recipe <-
+  recipe(PARTYLR~., data = icpsr_train) |>
+  step_impute_bag(PARTYLR) |>
+  step_impute_bag(all_predictors(), trees = 2) # can't go more than 2 trees or else runtime issues
+
+korean_model <-
+  rand_forest(
+    trees = 500,
+    mtry = 5,
+    min_n = 4
+  ) |>
+  set_mode("classification") |>
+  set_engine(
+    engine = "ranger",
+    importance = "impurity",
+    num.threads = 4
+  )
   
-
-# old reference code - not to be evaluated 
-
-anes_lassolog_model <- 
-  logistic_reg(penalty = 2, mixture = 1) |>
-  set_mode(mode = "classification") |>
-  set_engine(engine = "glm")  
-
-anes_lasso_wf <- 
+korean_rf_wf <- 
   workflow() |>
-  add_recipe(recipe = anes_lasso_recipe) |>
-  add_model(spec = anes_lassolog_model)
+  add_recipe(korean_recipe) |>
+  add_model(korean_model) |>
+  add_case_weights(FINALWT)
 
-anes_lasso_wf |>
-  fit(data = anes_train) |>
+korean_resamples <- 
+  korean_rf_wf |>
+  fit_resamples(resamples = korean_folds)
+
+collect_metrics(korean_resamples) # the model sucks....
+
+korean_rf_final <- 
+  korean_rf_wf |>
+  last_fit(icpsr_split)
+
+korean_vip_plot <- 
+  korean_rf_final |>
   extract_fit_parsnip() |>
-  tidy()
+  vip(num_features = 20)
+
+korean_vip_plot + ggtitle("Variable importance in determining Korean voter party preference") 
+
+ggsave(filename = "korean_vip_plot.png"
 
 ```
