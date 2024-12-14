@@ -538,7 +538,7 @@ kgss <-
 # Variable selection data cleaning for NA values 
 
 kgss_reduced <- 
-  kgss_korean_survey |>
+  kgss |>
   select(
     PARTYLR, FINALWT,SEX,AGE, MARITAL,EMPLY,EDUC,TECHHIGH,SPEDUC,PAEDUC,MAEDUC,
     RINCOME,INDUSTRY,OCC,SATFIN,FINALTER,STDLIVIN,
