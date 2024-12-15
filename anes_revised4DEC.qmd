@@ -7,6 +7,8 @@ code-fold: true
 code-overflow: scroll
 code-line-numbers: true
 toc: true
+editor_options: 
+  chunk_output_type: console
 ---
 
 
@@ -45,6 +47,7 @@ library(baguette)
 library(vip)
 library(pROC)
 library(srvyr)
+library(car)
 
 # visualization packages
 
@@ -311,7 +314,15 @@ We anticipate that question **VCF0838**-*By law, when should abortion be allowed
 
 We also anticipate that question **VCF0867a**—*Affirmative Action in hiring/promotion*—may also increase in importance in future editions of the ANES survey given the Supreme Court also overturned precedent for affirmative action in the college application process in June 2023.[^5]
 
-We were surprised to see questions **VCF0830**—*Aid to Blacks Scale*— and **VCF0886**—*Federal Spending-Poor/Poor People*— appear on the variable importance graph. Most surprising is that question **VCF9239**-*How important is gun control issue to respondent*— is at the very bottom below the aforementioned questions. Is this a case of overestimating the effect of gun control on voter political ID, specifically in the media?
+We were surprised to see questions **VCF0830**—*Aid to Blacks Scale*— appear on the variable importance graph. Most surprising is that question **VCF9239**-*How important is gun control issue to respondent*— is at the very bottom below the aforementioned questions. To investigate this further, we ran a regression to test for potential multicollinearity. The variance inflation factors (VIF) from this regression indicate that there is no multicollinearity between VCF9239 and the other top 19 variables. Is this a case of overestimating the effect of gun control on voter political ID, specifically in the media? 
+
+```{r}
+lm_model <- lm(VCF9239 ~ VCF9205 + VCF0801 + VCF0849 + VCF9217 + VCF0101 + VCF0253 + VCF0830 + VCF0901a + VCF0210 + VCF0228 + VCF0209 + VCF0234 + VCF0838 + VCF0105b + VCF0824 + VCF0232 + VCF0232 + VCF0206 + VCF9238 + VCF0207, data = anes_train)
+
+# calculate vif
+vif_values <- vif(lm_model)
+print(vif_values)
+```
 
 Surprisingly, question **VCF0105b**—*Four category Race-Ethnicity Summary*, appears closer to the bottom. We are curious as to whether race is also overestimated as a key variable in a voter's political identification. The rightward trend we saw in the 2024 Presidential election seems to suggests that race isn't as big a divider as it appears, at least in the current political *zeitgeist*.[^6]
 
