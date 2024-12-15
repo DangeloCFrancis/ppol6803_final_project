@@ -21,6 +21,10 @@ library(tidyverse)
 library(tidymodels) # use case weights 
 library(readxl)
 library(srvyr) # not needed
+library(mice)
+library(ggplot2)
+library(recipes)
+library(broom)
 
 anes_1948_2020 <- 
   read_csv("data/anes_timeseries_cdf_csv_20220916.csv")
@@ -89,102 +93,143 @@ anes_2000_2020 <-
     VCF0201:VCF0291, # attitude to different interest groups
     matches("^VCF08"), # policy preference
     matches("^VCF92"), # political opinion & VCF9277-82 personal info
-    
-    # Family Information
-    VCF0306, # party identification of R's father
-    VCF0307, # party identification of R's mother
-    VCF0308, # political interest of R's father
-    VCF0309, # political interest of R's mother
-    VCF0138, # number of children in family
-  
-    
+
     # Spatial Information
-    VCF0900, # congressional district of residence
-    VCF0900b, # state and congressional district - fips
-    VCF0900c, # state and congressional district - postal abbrev and cd
     VCF0901a, # state code - fips
     VCF0901b, # state postal abbrev
   ) |>
   filter(VCF0004 %in% c(2000:2020), 
          VCF0014 == 1 & VCF0013 == 1, 
-         is.na(VCF9999) == FALSE,
+         !is.na(VCF9999) & !is.na(VCF0901a) & !is.na(VCF0901b),
          VCF0748 %in% c(1,5), 
          VCF0705 > 0, # 0 - did not vote, declined to answer
          ) |> 
   # transform missing value to NAs
-  mutate(VCF0101 = ifelse(VCF0101 == 0, NA, VCF0101)) |>
-  mutate(VCF0104 = ifelse(VCF0104 == 0, NA, VCF0104)) |>
-  mutate(VCF0105b = ifelse(VCF0105b == 9, NA, VCF0105b)) |>
-  mutate(VCF0110 = ifelse(VCF0110 == 0, NA, VCF0110)) |>
-  mutate(VCF0147 = ifelse(VCF0147 %in% c(8,9), NA, VCF0147)) |>
-  mutate(VCF0114 = ifelse(VCF0114 == 0, NA, VCF0114)) |>
-  mutate(VCF0116 = ifelse(VCF0116 == 9, NA, VCF0116)) |>
-  mutate(VCF0146 = ifelse(VCF0146 == 9, NA, VCF0146)) |> # high percentage of missing data
-  mutate(VCF9224 = ifelse(VCF9224 %in% c(-8,-9), NA, VCF9224)) |>
-  mutate(VCF0128 = ifelse(VCF0128 == 0, NA, VCF0128)) |>
-  mutate(across(VCF0201:VCF0253, ~ ifelse(. %in% c(98, 99), NA, .))) |>
-  mutate(VCF0290 = ifelse(VCF0290 %in% c(998, 999), NA, VCF0290)) |>
-  mutate(VCF0291 = ifelse(VCF0291 %in% c(998, 999), NA, VCF0291)) |>
-  mutate(VCF0801 = ifelse(VCF0801 %in% c(98, 99), NA, VCF0801)) |>
-  mutate(VCF0803 = ifelse(VCF0803 %in% c(0, 9), NA, VCF0803)) |>
-  mutate(VCF0804 = ifelse(VCF0804 %in% c(0, 9), NA, VCF0804)) |>
-  mutate(across(VCF0806:VCF0823, ~ ifelse(. %in% c(0, 9), NA, .))) |>
-  mutate(VCF0825 = ifelse(VCF0825 %in% c(0, 9), NA, VCF0825)) |>
-  mutate(VCF0826 = ifelse(VCF0825 %in% c(0, 9), NA, VCF0825)) |>
-  mutate(VCF0828 = ifelse(VCF0828 == 0, NA, VCF0828)) |>
-  mutate(VCF0829 = ifelse(VCF0829 == 0, NA, VCF0829)) |>
-  mutate(VCF0830 = ifelse(VCF0830 == 0, NA, VCF0830)) |>
-  mutate(VCF0838 = ifelse(VCF0838 == 0, NA, VCF0838)) |>
-  mutate(VCF0839 = ifelse(VCF0839 == 0, NA, VCF0839)) |>
-  mutate(VCF0843 = ifelse(VCF0843 == 0, NA, VCF0843)) |>
-  mutate(VCF0846 = ifelse(VCF0846 %in% c(0,8), NA, VCF0846)) |>
-  mutate(VCF0849 = ifelse(VCF0849 %in% c(0,9), NA, VCF0849)) |>
-  mutate(VCF0850 = ifelse(VCF0850 %in% c(0,9), NA, VCF0850)) |>
-  mutate(VCF0852 = ifelse(VCF0852 == 9, NA, VCF0852)) |>
-  mutate(VCF0853 = ifelse(VCF0853 == 9, NA, VCF0853)) |>
-  mutate(VCF0867 = ifelse(VCF0867 == 9, NA, VCF0867)) |>
-  mutate(VCF0870 = ifelse(VCF0870 %in% c(0,8), NA, VCF0870)) |>
-  mutate(VCF0871 = ifelse(VCF0871 %in% c(0,8,9), NA, VCF0871)) |>
-  mutate(VCF0872 = ifelse(VCF0872 %in% c(8,9), NA, VCF0872)) |>
-  mutate(VCF0876 = ifelse(VCF0876 == 9, NA, VCF0876)) |>
-  mutate(VCF0876a = ifelse(VCF0876a == 9, NA, VCF0876a)) |>
-  mutate(VCF0878 = ifelse(VCF0878 == 9, NA, VCF0878)) |>
-  mutate(VCF0879a = ifelse(VCF0879a == 9, NA, VCF0879a)) |>
-  mutate(VCF0880 = ifelse(VCF0880 %in% c(0,9), NA, VCF0880)) |>
-  mutate(VCF0880a = ifelse(VCF0880a %in% c(0,9), NA, VCF0880a)) |>
-  mutate(VCF0881 = ifelse(VCF0881 %in% c(0,9), NA, VCF0881)) |>
-  mutate(VCF0886 = ifelse(VCF0886 == 9, NA, VCF0886)) |>
-  mutate(VCF0888 = ifelse(VCF0888 == 9, NA, VCF0888)) |>
-  mutate(VCF0890 = ifelse(VCF0890 == 9, NA, VCF0890)) |>
-  mutate(VCF0894 = ifelse(VCF0894 == 9, NA, VCF0894)) |>
-  
-  
-  
+  mutate(
+    VCF0101 = ifelse(VCF0101 == 0, NA, VCF0101),
+    VCF0104 = ifelse(VCF0104 == 0, NA, VCF0104),
+    VCF0105b = ifelse(VCF0105b == 9, NA, VCF0105b),
+    VCF0110 = ifelse(VCF0110 == 0, NA, VCF0110),
+    VCF0147 = ifelse(VCF0147 %in% c(8, 9), NA, VCF0147),
+    VCF0114 = ifelse(VCF0114 == 0, NA, VCF0114),
+    VCF0116 = ifelse(VCF0116 == 9, NA, VCF0116),
+    VCF0146 = ifelse(VCF0146 == 9, NA, VCF0146),
+    VCF9224 = ifelse(VCF9224 %in% c(-8, -9), NA, VCF9224),
+    VCF0128 = ifelse(VCF0128 == 0, NA, VCF0128),
+    across(VCF0201:VCF0253, ~ ifelse(. %in% c(98, 99), NA, .)),
+    VCF0290 = ifelse(VCF0290 %in% c(998, 999), NA, VCF0290),
+    VCF0291 = ifelse(VCF0291 %in% c(998, 999), NA, VCF0291),
+    VCF0801 = ifelse(VCF0801 %in% c(98, 99), NA, VCF0801),
+    VCF0803 = ifelse(VCF0803 %in% c(0, 9), NA, VCF0803),
+    VCF0804 = ifelse(VCF0804 %in% c(0, 9), NA, VCF0804),
+    across(VCF0806:VCF0823, ~ ifelse(. %in% c(0, 9), NA, .)),
+    VCF0825 = ifelse(VCF0825 %in% c(0, 9), NA, VCF0825),
+    VCF0826 = ifelse(VCF0825 %in% c(0, 9), NA, VCF0825),
+    VCF0828 = ifelse(VCF0828 == 0, NA, VCF0828),
+    VCF0829 = ifelse(VCF0829 == 0, NA, VCF0829),
+    VCF0830 = ifelse(VCF0830 == 0, NA, VCF0830),
+    VCF0838 = ifelse(VCF0838 == 0, NA, VCF0838),
+    VCF0839 = ifelse(VCF0839 == 0, NA, VCF0839),
+    VCF0843 = ifelse(VCF0843 == 0, NA, VCF0843),
+    VCF0846 = ifelse(VCF0846 %in% c(0, 8), NA, VCF0846),
+    VCF0849 = ifelse(VCF0849 %in% c(0, 9), NA, VCF0849),
+    VCF0850 = ifelse(VCF0850 %in% c(0, 9), NA, VCF0850),
+    VCF0852 = ifelse(VCF0852 == 9, NA, VCF0852),
+    VCF0853 = ifelse(VCF0853 == 9, NA, VCF0853),
+    VCF0867 = ifelse(VCF0867 == 9, NA, VCF0867),
+    VCF0870 = ifelse(VCF0870 %in% c(0, 8), NA, VCF0870),
+    VCF0871 = ifelse(VCF0871 %in% c(0, 8, 9), NA, VCF0871),
+    VCF0872 = ifelse(VCF0872 %in% c(8, 9), NA, VCF0872),
+    VCF0876 = ifelse(VCF0876 == 9, NA, VCF0876),
+    VCF0876a = ifelse(VCF0876a == 9, NA, VCF0876a),
+    VCF0878 = ifelse(VCF0878 == 9, NA, VCF0878),
+    VCF0879a = ifelse(VCF0879a == 9, NA, VCF0879a),
+    VCF0880 = ifelse(VCF0880 %in% c(0, 9), NA, VCF0880),
+    VCF0880a = ifelse(VCF0880a %in% c(0, 9), NA, VCF0880a),
+    VCF0881 = ifelse(VCF0881 %in% c(0, 9), NA, VCF0881),
+    VCF0886 = ifelse(VCF0886 == 9, NA, VCF0886),
+    VCF0888 = ifelse(VCF0888 == 9, NA, VCF0888),
+    VCF0890 = ifelse(VCF0890 == 9, NA, VCF0890),
+    VCF0894 = ifelse(VCF0894 == 9, NA, VCF0894),
+    VCF9201 = ifelse(VCF9201 %in% c(-7, -8, -9), NA, VCF9201),
+    VCF9202 = ifelse(VCF9202 %in% c(-7, -8, -9), NA, VCF9202),
+    VCF9203 = ifelse(VCF9203 %in% c(-7, -8, -9), NA, VCF9203),
+    VCF9204 = ifelse(VCF9204 %in% c(-8, -9), NA, VCF9204),
+    VCF9205 = ifelse(VCF9205 %in% c(-8, -9), NA, VCF9205),
+    VCF9206 = ifelse(VCF9206 %in% c(-8, -9), NA, VCF9206),
+    VCF9207 = ifelse(VCF9207 %in% c(-7, -8, -9), NA, VCF9207),
+    VCF9208 = ifelse(VCF9208 %in% c(-7, -8, -9), NA, VCF9208),
+    across(VCF9209:VCF9240, ~ ifelse(. %in% c(-8, -9), NA, .)),
+    VCF9241 = ifelse(VCF9241 %in% c(-7, -8, -9), NA, VCF9241),
+    VCF9242 = ifelse(VCF9242 %in% c(-7, -8, -9), NA, VCF9242),
+    across(VCF9243:VCF9259, ~ ifelse(. %in% c(-8, -9), NA, .)),
+    VCF9260 = ifelse(VCF9260 == -9, NA, VCF9260),
+    VCF9267 = ifelse(VCF9267 %in% c(-7, -8, -9), NA, VCF9267),
+    VCF9268 = ifelse(VCF9268 %in% c(-7, -8, -9), NA, VCF9268),
+    VCF9269 = ifelse(VCF9269 %in% c(-7, -8, -9), NA, VCF9269),
+    across(VCF9270:VCF9282, ~ ifelse(. %in% c(-8, -9), NA, .)),
+    VCF9271 = ifelse(VCF9271 %in% c(-8, -9), NA, VCF9271),
+    VCF9272 = ifelse(VCF9272 %in% c(-8, -9), NA, VCF9272)
+  ) |>
   naniar::add_n_miss() |>
   select(-where(~sum(is.na(.)) > 1000))
 
 
-# Imputations needed
 
-VCF0114
 
-VCF0806
 
-# Check of NAs in each var
+# Imputations
+# how to integrate survey weight into imputation?
+# imputation model?
+# Chained equation imputation
+imputed_anes_2000_2020 <- anes_2000_2020 |>
+  select(-VCF0004, -VCF9999, -VCF0901a, -VCF0901b) |>
+  mice(m=5,maxit=3,meth='pmm',seed=500)
 
-na_count <-
+complete_anes_2000_2020 <- complete(imputed_anes_2000_2020)
+
+densityplot(imputed_anes_2000_2020, ~ VCF0217)
+
+# drop the variables of year, weights, spacial information before pca
+
+
+
+# PCA
+# normalize numeric variables
+recipe_pca1 <- complete_anes_2000_2020 |>
+  recipe() |>
+  step_normalize(-VCF0004, -VCF9999, -VCF0901a, -VCF0901b) |>
+  prep()
+
+# apply estimated mean and sd to original data
+numeric_anes_2000_2020 <- recipe_pca |>
+  bake(new_data = complete_anes_2000_2020) |>
   
-  
-  as_tibble(colSums(is.na(anes_2000_2020)))
+# correlation matrix
+numeric_anes_2000_2020 |>
+  select(-VCF0004, -VCF9999, -VCF0901a, -VCF0901b) |>
+  cor()
 
-lm(VCF0705 ~., data = anes_2000_2020)
+# estimate the loadings
+recipe_pca2 <- numeric_anes_2000_2020 |>
+  recipe() |>
+  step_pca(-VCF0004, -VCF9999, -VCF0901a, -VCF0901b) |>
+  prep(data = numeric_anes_2000_2020)
+
+# apply loadings to original data
+pca_anes_2000_2020 <- recipe_pca2 |>
+  bake(new_data = numeric_anes_2000_2020)
 
 
-anes_2000_2020_no_pres_vote <- 
-  anes_2000_2020 |>
-  select(-VCF0705,-VCF0706)
+
+# Predictive Modeling
 
 
-lm()
+
+
+
+
+
+
 
 ```
