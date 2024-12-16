@@ -48,6 +48,7 @@ library(vip)
 library(pROC)
 library(srvyr)
 library(car)
+library(haven)
 
 # visualization packages
 
@@ -786,6 +787,187 @@ anes_vip_plot +
   labs(title ="ANES Respondent") + kgss_vip_plot + 
   labs(title = "KGSS Respondent")
 
+
+```
+
+### Asian Barometer (mainland China)
+
+```{r}
+#| label: setup for using Asian Barometer data
+#| message: false
+#| warning: false
+
+china <- read_sav("data/w5_china.sav")
+
+reduced_china <- china  |>
+  select(matches("q"), SE4, SE5, SE5A, SE8A, SE8B, Se11, w, Political_affiliation) |>
+  filter(q104 > -0 & q104 < 11) |>
+  mutate(
+    w = importance_weights(w),
+    across(q1:q6, ~ ifelse(. %in% c(8, 9), NA, .)), 
+    across(q7:q17, ~ifelse(. %in% c(97, 98, 99), NA, .)), 
+    across(q22:q23, ~ ifelse(. %in% c(8, 9), NA, .)),
+    across(q24:q27, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q39:q48, ~ ifelse(. %in% c(8, 9), NA, .)), 
+    q49 = ifelse(q49 %in% c(97, 98, 99), NA, q49), 
+    q50 = ifelse(Q50 %in% c(8, 9), NA, Q50),
+    q51a = ifelse(Q51A %in% c(7, 9), NA, Q51A),
+    q51b = ifelse(Q51B %in% c(7, 9), NA, Q51B), 
+    q51c = ifelse(Q51C %in% c(7, 9), NA, Q51C), 
+    q51d = ifelse(Q51D %in% c(7, 9), NA, Q51D), 
+    q52 = ifelse(q52 %in% c(8, 9), NA, q52), 
+    across(q53:q55, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q58:q90, ~ ifelse(. %in% c(-1, 0, 7, 8, 9), NA, .)),
+    q82a = ifelse(q82a %in% c(8, 9), NA, q82a), 
+    q83a = ifelse(q83a %in% c(8, 9), NA, q83a),
+    q84a = ifelse(q84a %in% c(8, 9), NA, q84a),
+    q85a = ifelse(q85a %in% c(8, 9), NA, q85a),
+    across(q91:q97, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q98:q100, ~ ifelse(. %in% c(8, 9), NA, .)),
+    across(q102:q104, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    q106 = ifelse(q106 %in% c(990, 998, 999), NA, q106),
+    across(q107:q127, ~ ifelse(. %in% c(-1, 0, 7, 8, 9), NA, .)),
+    across(q128:q131, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q132:q173, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    q156_1 = ifelse(q156_1 %in% c(-1, 0, 7, 8, 9), NA, q156_1),
+    q156a = ifelse(q156a %in% c(-1, 0, 7, 8, 9), NA, q156a),
+    q157a = ifelse(q157a %in% c(-1, 0, 7, 8, 9), NA, q157a),
+    q157_1 = ifelse(q157_1 %in% c(-1, 0, 7, 8, 9), NA, q157_1),
+    q160a = ifelse(q160a %in% c(-1, 0, 7, 8, 9), NA, q160a),
+    q160b = ifelse(q160b %in% c(-1, 0, 7, 8, 9), NA, q160b),
+    q160c = ifelse(q160c %in% c(-1, 0, 7, 8, 9), NA, q160c),
+    q160d = ifelse(q160d %in% c(-1, 0, 7, 8, 9), NA, q160d),
+    q174 = ifelse(q174 %in% c(90, 97, 98, 99), NA, q174),
+    q175 = ifelse(q175 %in% c(8, 9), NA, q175),
+    q176 = ifelse(q176 %in% c(97, 98, 99), NA, q176),
+    q177 = ifelse(q177 %in% c(8, 9), NA, q177),
+    q178 = ifelse(q178 %in% c(-1, 97, 98, 99), NA, q178),
+    q179 = ifelse(q179 %in% c(90, 97, 98, 99), NA, q179),
+    q180 = ifelse(q180 %in% c(90, 97, 98, 99), NA, q180),
+    across(q183:q185, ~ ifelse(. %in% c(8, 9), NA, .)),
+    SE4 = ifelse(SE4 == 9, NA, SE4), 
+    SE5 = ifelse(SE5 == 99, NA, SE5),
+    SE5A = ifelse(SE5A %in% c(90, 99), NA, SE5A), 
+    SE8A = ifelse(SE8A == 99, NA, SE8A),
+    SE8B = ifelse(SE8B == 9, NA, SE8B),
+    Se11 = ifelse(Se11 == 9999, NA, Se11),
+  ) |> 
+  select(-where(~sum(is.na(.)) > 400)) |>
+  mutate(q104 = as.factor(q104)) |>
+  mutate(across(where(is.labelled), ~ as.numeric(.)))
+
+reduced_china <- reduced_china |>
+  select(-q18, , -q19, -q20, -q21, -(q28:q38), -q56, -q57, -q101, -q105, -q181, -q182)
+
+# q104 is outcome variable 
+
+china_split <- 
+  reduced_china |>
+  initial_split(prop = .75)
+
+china_train <- training(china_split) 
+
+# discards the label to prevent errors in step_impute_bag()
+china_train <- china_train |>
+mutate(across(where(is.labelled), ~ zap_labels(.)))
+
+china_test <- testing(china_split)
+
+china_folds <- vfold_cv(data = china_train, v = 5)
+
+china_recipe <-
+  recipe(q104 ~ ., data = china_train) |>
+  step_impute_bag(all_predictors(), trees = 5)
+
+china_model <-
+  rand_forest(
+    trees = 500,
+    mtry = 5,
+    min_n = 4
+  ) |>
+  set_mode("classification") |>
+  set_engine(
+    engine = "ranger",
+    importance = "impurity",
+    num.threads = 4
+  )
+  
+china_rf_wf <- 
+  workflow() |>
+  add_recipe(china_recipe) |>
+  add_model(china_model) |>
+  add_case_weights(w)
+
+china_resamples <- 
+  china_rf_wf |>
+  fit_resamples(resamples = china_folds)
+
+collect_metrics(china_resamples)
+```
+
+### China Variable Importance 
+
+```{r}
+#| label: kgss vip plot
+#| warning: false
+#| message: false
+
+china_rf_final <- 
+  china_rf_wf |>
+  last_fit(china_split)
+
+china_vip_plot <- 
+  china_rf_final |>
+  extract_fit_parsnip() |>
+  vip(num_features = 20)
+
+china_vip_plot +
+  labs(
+    title = str_wrap("Variable importance in determining mainland China's political institution preference"),
+    subtitle = "",
+    caption = "")
+
+ggsave(filename = "china_vip_plot.png", width = 11, height = 8.5)
+
+ggsave(filename = "china_vip_plot.pdf", width = 11, height = 8.5)
+
+```
+
+## Testing China predictive model 
+
+```{r}
+#| label: assessing China model 
+
+
+china_final_wf <- 
+  china_rf_final |>
+  extract_workflow()
+
+china_rf_predictions <-
+  predict(china_final_wf, new_data = china_test) |>
+  bind_cols(
+    predict(china_final_wf, new_data = china_test, type = "prob"),
+    china_test |>
+    select(q104)
+  )
+
+select(china_rf_predictions, q104, .pred_class, starts_with(".pred"))
+
+```
+
+```{r}
+#| label: precision and recall of China barometer model 
+
+china_rf_predictions |>
+  precision(
+    truth = q104,
+    estimate = .pred_class)
+
+china_rf_predictions |>
+  recall(
+    truth = q104,
+    estimate = .pred_class
+  )
 
 ```
 
