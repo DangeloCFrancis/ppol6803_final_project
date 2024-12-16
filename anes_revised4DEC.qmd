@@ -1,6 +1,6 @@
 ---
 title: "Predicting party identification using socioeconomic characterisitcs"
-author: "D'Angelo Francis; Su Yeon Seo; Yuxiang 'Nathan' Su"
+author: "D'Angelo Francis; Su Yeon Seo; Yuxiang Su"
 format: html
 embed-resources: true
 code-fold: true
