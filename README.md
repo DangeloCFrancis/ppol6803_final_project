@@ -18,18 +18,13 @@ the Resolute Desk spawned three questions:
 
 **Website**:<https://dangelocfrancis.github.io/ppol6803_final_project/>
 
-:::{.callout-note}
-
 ## Project Specifics 
 
 This project is written *entirely* in [R](https://www.r-project.org/). 
 To run, download the `predicting_voter_politics.qmd` file. Then,
 install *all* necessary packages indicated in the **library setup** section.
 
-:::
-
-
-:::{.callout-important title="Getting Data Sources for Reproducibility"}
+## Data Sources for Reproducibility
 
 To avoid issues running the code, please make sure that you pull the `/data` 
 folder in addition to the `predicting_voter_politics.qmd`file. This file will contain:
@@ -49,11 +44,10 @@ using the links under **Data Sources** below.
 
 ## Data Sources
 
-- [ANES 1948 - 2020 Cumulative Time Series Data Codebook](https://electionstudies.org/wp-content/uploads/2022/09/anes_timeseries_cdf_codebook_var_20220916.pdf#page=4.76)
+- [ANES 1948 - 2020 Cumulative Time Series Data](https://electionstudies.org/data-center/anes-time-series-cumulative-data-file/)
 - [Korean General Society Survey](https://www.icpsr.umich.edu/web/ICPSR/studies/38577/datadocumentation#)
 - [Asian Barometer Data Release](https://www.asianbarometer.org/datar?page=d10)
 
 [^1]: Delete the chunk or use the code option `eval: false`
 
-:::
 
