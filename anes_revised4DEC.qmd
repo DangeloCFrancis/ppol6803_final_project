@@ -867,10 +867,16 @@ kgss_rf_predictions |>
 The precision of the KGSS model is approximately 42 percent. The recall of this model is around 24 percent. These values indicate that this model would *not* ready for practical implementation.
 
 ## Predicting Political Identification in One-Party Authoritarian Regimes - China
+Surprisingly, our random forests model did not perform well in predicting the political identification of South Korean voters. Despite this, South Korean citizens have recently demonstrated their democratic resilience by successfully thwarting an attempted coup by the sitting president, Yoon Suk Yeol[^9], preventing a regression to authoritarian rule—a resilience rooted in their historical struggles against autocratic leaders. In stark contrast, mainland China has seen an erosion of the few remaining democratic norms. In 2018, President Xi Jinping abolished term limits in 2018's constitutional amendment[^10]. Under Xi, China claims to have the 'broadest, truest, and most effective democracy' through its concept of 'whole-process people's democracy'[^11]. However, in recent years, China has become increasingly repressive as the CCP tightens control over all aspects of life and governance. In 2023, China was ranked as the third least electorally democratic country in the world. This raises a critical question: Do the determinants of political preferences in an entirely different political regime, align with those in democratic countries? 
 
-Throughout this project, we have discussed how socioeconomic indicators in the form of survey questions can be used to identify a respondent's political identity. Though our prior models covered a plethora of categories that can serve as identifiers, we have not looked into whether we could predict political identity for respondent's in one-party authoritarian regimes. Using Wave 5[^10] data, our outcome variable is **q104**: *Where would you place our country [China] today? [Is] democracy suitable or not?* 
+[^9]: Ng, K., Kwon, J., Ku, Yuna.; [South Korea opposition files motion to impeach President Yoon](https://www.bbc.com/news/articles/c8rjd064012o), 4 December 2024
 
-[^10]: Wave 5 data is data collected between 2018-2021 
+[^10]: Doubek, J.; [China Removes Presidential Term Limits, Enabling Xi Jinping To Rule Indefinitely](https://www.npr.org/sections/thetwo-way/2018/03/11/592694991/china-removes-presidential-term-limits-enabling-xi-jinping-to-rule-indefinitely), 11 March 2018
+
+[^11]: Chinese People's Daily; [The broadest, truest, and most effective democracy — as guided by General Secretary Xi Jinping in advancing whole-process people's democracy](https://www.gov.cn/xinwen/2023-03/03/content_5744265.htm), 3 March 2023
+
+### Asian Barometer Survey Data 
+We use data from the Round 5 Asian Barometer Survey, conducted between 2018 and 2021, just after the constitutional amendment. From the original 306 variables, we select 156 variables that primarily cover information on thermometer ratings and demographics. Most of the dropped variables were excluded due to a high volume of missing data, likely resulting from censorship of speech. Our outcome variable is **q104**: *Where would you place our country [China] today? [Is] democracy suitable or not? [1:10][Democracy is completely unsuitable:Democracy is perfectily suitable]*
 
 ```{r}
 #| label: setup for using Asian Barometer data
