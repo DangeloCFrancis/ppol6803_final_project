@@ -1,37 +1,53 @@
 # PPOL 6803 - Intro into Data Science Final Project (Fall 2024 )
 
 Contributors: 
-- [D'Angelo Francis](https://github.com/DangeloCFrancis)
-- [Nathan Su](https://github.com/topnathan) 
-- [Su Yeon Seo](https://github.com/ssy0709)
+- [D'Angelo Francis](https://github.com/DangeloCFrancis) - Georgetown University
+- [Yuxiang Su](https://github.com/topnathan) - Georgetown University
+- [Su Yeon Seo](https://github.com/ssy0709) - Georgetown University
 
 ## Overview
 
 The United States 2024 Presidential elections have renewed [debates](https://www.nbcnews.com/politics/2024-election/state-poll-results-show-ties-are-tied-voters-pollsters-rcna177703) about the 
 precision of polls in predicting electoral outcomes. The conversation surrounding
 the purpose of polls in gauging a presidential candidate's hopes of sitting behind
-the Resolute Desk spawned one question: *How 'predictable' is the American voter?*
+the Resolute Desk spawned three questions: 
 
-## Methodology 
+1. *How 'predictable' is the American voter?* 
+2. *Is the American selectorate as predictable as the South Korean selectorate?* 
+3. *Is it possible to predict an individual's political identity if democratic institutions do not exist in their country?*  
 
-To assess the 'predictability' of voters, we trained a Classification and Regression
-Tree (CART) model and Principal Component Analysis (PCA) to provide a probability that a survey respondent voted 'conservatively' or 'liberally'[^1]. 
-Our primary data for analysis and modeling will be survey data from the 
-[American National Election Studies](https://electionstudies.org/), a collaboration 
-between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), 
-Stanford University,and the National Science Foundation (NSF). We focused on responses between
-2000 and 2020. The list of the survey variables used in the model can be found [here](https://dangelocfrancis.github.io/ppol6803_final_project/).
-The codebook provided by ANES for the time series study can be found [here](https://electionstudies.org/wp-content/uploads/2022/09/anes_timeseries_cdf_codebook_var_20220916.pdf#page=4.76).
+**Website**:<https://dangelocfrancis.github.io/ppol6803_final_project/>
 
-The model uses questions that the ANES asks about a candidate 
-that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the 
-actual outcome($\hat{Y}$). The goal of our model is to have it precisely predict
-voter preference by learning about the associated demographic characteristics (race and ethnicity,
-religion, socioeconomic status, etc.) and using survey responses asking about relevant policies 
-(transgender rights, gun control, reproductive rights, etc.).
+## Project Specifics 
 
-We will incorporate variable importance analysis (VIM analysis) to deduce 
-which survey topics and demographic characteristics are the best indicators of 
-candidate preference.
+This project is written *entirely* in [R](https://www.r-project.org/). 
+To run, download the `predicting_voter_politics.qmd` file. Then,
+install *all* necessary packages indicated in the **library setup** section.
 
-[^1]: For simplicity, our model will reflect a binary-choice election.
+### Reproducibility
+
+To avoid issues running the code, please make sure that you pull the `/data` 
+folder in addition to the `predicting_voter_politics.qmd`file. This file will contain:
+
+- `.RData` for the ANES and KGSS model
+- `.sav` (SPSS file) for the Asian Barometer data
+
+The code chunk **ANES data loading and variable selection** can be *skipped*[^1]
+if using the .RData file for the ANES. Make sure to load the data using the following:
+
+`load("data/anes_2000_2020.RData")`
+
+This will load the R object directly into the environment.
+
+If you wish to use the raw data that this project worked with, it can be found 
+using the links under **Data Sources** below.
+
+## Data Sources
+
+- [ANES 1948 - 2020 Cumulative Time Series Data](https://electionstudies.org/data-center/anes-time-series-cumulative-data-file/)
+- [Korean General Society Survey](https://www.icpsr.umich.edu/web/ICPSR/studies/38577/datadocumentation#)
+- [Asian Barometer Data Release](https://www.asianbarometer.org/datar?page=d10)
+
+[^1]: Delete the chunk or use the code option `eval: false`
+
+
