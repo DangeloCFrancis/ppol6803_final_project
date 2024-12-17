@@ -32,7 +32,7 @@ folder in addition to the `predicting_voter_politics.qmd`file. This file will co
 - `.RData` for the ANES and KGSS model
 - `.sav` (SPSS file) for the Asian Barometer data
 
-The code chunk **ANES data loading and variable selection** can be **skipped*[^1]
+The code chunk **ANES data loading and variable selection** can be *skipped*[^1]
 if using the .RData file for the ANES. Make sure to load the data using the following:
 
 `load("data/anes_2000_2020.RData")`
