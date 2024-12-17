@@ -1,44 +1,53 @@
 # PPOL 6803 - Intro into Data Science Final Project (Fall 2024 )
 
 Contributors: 
-- [D'Angelo Francis](https://github.com/DangeloCFrancis)
-- [Nathan Su](https://github.com/topnathan) 
-- [Su Yeon Seo](https://github.com/ssy0709)
+- [D'Angelo Francis](https://github.com/DangeloCFrancis) - Georgetown University
+- [Yuxiang Su](https://github.com/topnathan) - Georgetown University
+- [Su Yeon Seo](https://github.com/ssy0709) - Georgetown University
 
 ## Overview
 
 The United States 2024 Presidential elections have renewed [debates](https://www.nbcnews.com/politics/2024-election/state-poll-results-show-ties-are-tied-voters-pollsters-rcna177703) about the 
 precision of polls in predicting electoral outcomes. The conversation surrounding
 the purpose of polls in gauging a presidential candidate's hopes of sitting behind
-the Resolute Desk spawned one question: *How 'predictable' is the American voter?*
+the Resolute Desk spawned three questions: 
 
-## Methodology 
+1. *How 'predictable' is the American voter?* 
+2. *Is the American selectorate as predictable as the South Korean selectorate?* 
+3. *Is it possible to predict an individual's political identity if democratic institutions do not exist in their country?*  
 
-To assess the 'predictability' of voters, we trained multiple models with training data split from 
-the [American National Election Studies](https://electionstudies.org/) 1948-2020 cumulative time series data. 
-We relied on survey data in the time frame 2000-2020 (**JUSTIFY**) and utilized the given ANES sampling weights. 
-We cleaned variables for possible MCAR NAs (**JUSTIFY**) and relied on `step_impute_bagged()` in recipes to impute 
-for other types of 'missingness'. After splitting the data (~10,000 observations) into training (.75) and testing data (.25),
-We trained three models on the training data and validated on the testing data: 
+**Website**:<https://dangelocfrancis.github.io/ppol6803_final_project/>
 
-- A decision tree,
-- A bagged forest model with re-sampling, and 
-- A LASSO multinominal classification model 
+## Project Specifics 
 
-The model uses questions that the ANES asks about a candidate that voter voted for (*e.g., "Which candidate did you vote for in...?"*) as the 
-actual outcome($\hat{Y}$). The goal of our model is to have it precisely predict
-voter preference by learning about the associated demographic characteristics (race and ethnicity,
-religion, socioeconomic status, etc.) and using ~80 survey responses asking about politics. 
-(opinion on transgender rights, gun control, reproductive rights, etc.). 
+This project is written *entirely* in [R](https://www.r-project.org/). 
+To run, download the `predicting_voter_politics.qmd` file. Then,
+install *all* necessary packages indicated in the **library setup** section.
 
-- [Complete list of the survey variables used](https://dangelocfrancis.github.io/ppol6803_final_project/)
-- [ANES 1948 - 2020 Cumulative Time Series Data Codebook](https://electionstudies.org/wp-content/uploads/2022/09/anes_timeseries_cdf_codebook_var_20220916.pdf#page=4.76)
+### Reproducibility
 
-We will incorporate variable importance analysis (VIM analysis) to deduce 
-which survey topics and demographic characteristics are the best indicators of 
-candidate preference.
+To avoid issues running the code, please make sure that you pull the `/data` 
+folder in addition to the `predicting_voter_politics.qmd`file. This file will contain:
 
-[^1]: A collaboration between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), 
-Stanford University,and the National Science Foundation (NSF).
+- `.RData` for the ANES and KGSS model
+- `.sav` (SPSS file) for the Asian Barometer data
 
-[^2]: For simplicity, our model will reflect a trinary-choice election: liberal/left-leaning, conservative/right-leaning, or moderate.
+The code chunk **ANES data loading and variable selection** can be *skipped*[^1]
+if using the .RData file for the ANES. Make sure to load the data using the following:
+
+`load("data/anes_2000_2020.RData")`
+
+This will load the R object directly into the environment.
+
+If you wish to use the raw data that this project worked with, it can be found 
+using the links under **Data Sources** below.
+
+## Data Sources
+
+- [ANES 1948 - 2020 Cumulative Time Series Data](https://electionstudies.org/data-center/anes-time-series-cumulative-data-file/)
+- [Korean General Society Survey](https://www.icpsr.umich.edu/web/ICPSR/studies/38577/datadocumentation#)
+- [Asian Barometer Data Release](https://www.asianbarometer.org/datar?page=d10)
+
+[^1]: Delete the chunk or use the code option `eval: false`
+
+
