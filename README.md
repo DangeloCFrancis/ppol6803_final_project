@@ -24,7 +24,7 @@ This project is written *entirely* in [R](https://www.r-project.org/).
 To run, download the `predicting_voter_politics.qmd` file. Then,
 install *all* necessary packages indicated in the **library setup** section.
 
-## Data Sources for Reproducibility
+### Reproducibility
 
 To avoid issues running the code, please make sure that you pull the `/data` 
 folder in addition to the `predicting_voter_politics.qmd`file. This file will contain:
