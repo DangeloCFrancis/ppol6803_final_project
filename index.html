@@ -3575,8 +3575,12 @@ Accuracy vs. Brier vs. ROC-AUC
 </div>
 </div>
 <div class="callout-body-container callout-body">
-<p>Though all three metrics are helpful in determining model performance, all three are created differently: <strong>Accuracy</strong> : How correct is the model overall?</p>
+<p>Though all three metrics are helpful in determining model performance, all three are created differently:</p>
 <dl>
+<dt><strong>Accuracy</strong></dt>
+<dd>
+How correct is the model overall?
+</dd>
 <dt><strong>Brier Score</strong></dt>
 <dd>
 This is the <a href="https://library.virginia.edu/data/articles/a-brief-on-brier-scores">mean square error</a> with respect to forecasts. A value of 0 is excellent, and a value of 1 is poor <em>if</em> the model deals with a binary choice. If the number of possible categories exceeds 2, the multinomial Brier score is used which is a sum of the mean squared errors with a range of [0,2]. Higher numbers are still worse than lower numbers with the multinominal Brier score.
@@ -4902,7 +4906,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 });
 </script>
 </div> <!-- /content -->
-<script>var lightboxQuarto = GLightbox({"closeEffect":"zoom","selector":".lightbox","loop":false,"descPosition":"bottom","openEffect":"zoom"});
+<script>var lightboxQuarto = GLightbox({"closeEffect":"zoom","loop":false,"openEffect":"zoom","selector":".lightbox","descPosition":"bottom"});
 (function() {
   let previousOnload = window.onload;
   window.onload = () => {
