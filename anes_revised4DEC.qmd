@@ -439,16 +439,113 @@ icpsr_reduced <-
   select(
     YEAR, FINALWT,SEX,AGE, MARITAL,EMPLY,EDUC,TECHHIGH,SPEDUC,PAEDUC,MAEDUC,
     WGSECT,WGUNN,WGPOSTN,RINCOME,INDUSTRY,OCC,INCOME,SATFIN,FINALTER,STDLIVIN,WORRY316,HELPPARE,KIDNUM10,PARSOL,CLASS,HOUSTYPE,HOUSOWNS,BLOODTYP,FEAR,FAMILY,FRIENDS,LEISURE,MONEY,EDUCATN,HEALTH,RELIGION,GETAHEAD,CULTBIAS1:CULTBIAS12,DONN1:DONN8,INDDIFF,IDEALFAM,MARIGOLD,WOMENCHD,LOVCOHAB,WOMENROL,MARABORT,HLPECONO,CHDOBEYP,HUSBWIFE,MARFUTUR,CHDFUTUR,FEJOBAFF,MAPAID,ABCHOOSE,HAPMAR,INFORAID,AIDOLD,GENCONF1:GENCONF5,OLDWELF1:OLDWELF3,OLDCONT1:OLDCONT3,starts_with("GOV"),starts_with("P")
-    )
-
+    ) |>
+  mutate(FINALWT = importance_weights(FINALWT),
+         YEAR = ifelse(YEAR < 0 , NA, YEAR),
+         SEX = ifelse(SEX < 0, NA, SEX), 
+           AGE = ifelse(AGE < 0 , NA, AGE),
+         MARITAL = ifelse(MARITAL < 0, NA, MARITAL),
+         EMPLY = ifelse(EMPLY < 0, NA, EMPLY),
+         EDUC = ifelse(EDUC < 0 , NA, EDUC),
+         TECHHIGH = ifelse(TECHHIGH < 0, NA, TECHHIGH),
+         SPEDUC = ifelse(SPEDUC < 0 ,NA, SPEDUC),
+         PAEDUC = ifelse(PAEDUC < 0 , NA, PAEDUC),
+         MAEDUC = ifelse(MAEDUC < 0, NA, MAEDUC),
+         WGSECT = ifelse(WGSECT < 0, NA, WGSECT),
+         WGUNN = ifelse(WGUNN < 0, NA, WGUNN),
+         WGPOSTN = ifelse(WGPPOSTN < 0, NA, WGPOSTN),
+         RINCOME = ifelse(RINCOME < 0, NA, RINCOME),
+         INDUSTRY = ifelse(INDUSTRY < 0, NA, INDUSTRY),
+         OCC = ifelse(OCC < 0, NA, OCC),
+         INCOME = ifelse(INCOME < 0, NA, INCOME),
+         SATFIN = ifelse(SATFIN < 0, NA, SATFIN),
+         FINALTER = ifelse(FINALTER < 0, NA, FINALTER),
+         STDLIVIN = ifelse(STDLIVIN < 0, NA, STDLIVIN),
+         WORRY316 = ifelse(WORRY316 < 0, NA, WORRY316),
+         HELPPARE = ifelse(HELPPARE < 0, NA, HELPPARE),
+         KIDNUM10 = ifelse(KIDNUM10 < 0, NA, KIDNUM10),
+         PARSOL = ifelse(PARSOL < 0, NA, PARSOL),
+         CLASS = ifelse(CLASS < 0, NA, CLASS),
+         HOUSTYPE = ifelse(HOUSTYPE < 0, NA, HOUSTYPE),
+         HOUSOWNS = ifelse(HOUSOWNS < 0, NA, HOUSOWNS),
+         BLOODTYP = ifelse(BLOODTYP < 0, NA, BLOODTYP),
+         FEAR = ifelse(FEAR < 0, NA, FEAR),
+         FAMILY = ifelse(FAMILY < 0, NA, FAMILY),
+         FRIENDS = ifelse(FRIENDS < 0, NA, FRIENDS),
+         LEISURE = ifelse(LEISURE < 0, NA, LEISURE),
+         MONEY = ifelse(MONEY < 0, NA, MONEY),
+         EDUCATN = ifelse(EDUCATN < 0, NA, EDUCATN),
+         HEALTH = ifelse(HEALTH < 0, NA, HEALTH),
+         RELIGION = ifelse(RELIGION < 0, NA, RELIGION),
+         GETAHEAD = ifelse(GETAHEAD < 0, NA, GETAHEAD),
+         CULTBIAS1 = ifelse(CULTBIAS1 < 0, NA, CULTBIAS1),
+         CULTBIAS2 = ifelse(CULTBIAS2 < 0, NA, CULTBIAS1),
+         CULTBIAS3 = ifelse(CULTBIAS3 < 0, NA, CULTBIAS3),
+         CULTBIAS4 = ifelse(CULTBIAS4 < 0, NA, CULTBIAS4),
+         CULTBIAS5 = ifelse(CULTBIAS5 < 0, NA, CULTBIAS5),
+         CULTBIAS6 = ifelse(CULTBIAS6 < 0, NA, CULTBIAS6),
+         CULTBIAS7 = ifelse(CULTBIAS7 < 0, NA, CULTBIAS7),
+         CULTBIAS8 = ifelse(CULTBIAS8 < 0, NA, CULTBIAS8),
+         CULTBIAS9 = ifelse(CULTBIAS9 < 0, NA, CULTBIAS9),
+         CULTBIAS10 = ifelse(CULTBIAS10 < 0, NA, CULTBIAS10),
+         CULTBIAS11 = ifelse(CULTBIAS11 < 0, NA, CULTBIAS11),
+         CULTBIAS12 = ifelse(CULTBIAS12 < 0, NA, CULTBIAS12),
+         DONN1 = ifelse(DONN1 < 0, NA, DONN1),
+         DONN2 = ifelse(DONN2 < 0, NA, DONN2),
+         DONN3 = ifelse(DONN3 < 0, NA, DONN3),
+         DONN4 = ifelse(DONN4 < 0, NA, DONN4),
+         DONN5 = ifelse(DONN5 < 0, NA, DONN5),
+         DONN6 = ifelse(DONN6 < 0, NA, DONN6),
+         DONN7 = ifelse(DONN7 < 0, NA, DONN7),
+         DONN8 = ifelse(DONN8 < 0, NA, DONN8),
+         INDDIFF = ifelse(INDDIFF < 0, NA, INDDIFF),
+         IDEALFAM = ifelse(IDEALFAM < 0, NA, IDEALFAM),
+         MARIGOLD = ifelse(MARIGOLD < 0, NA, MARIGOLD),
+         WOMENCHD = ifelse(WOMENCHD < 0, NA, WOMENCHD),
+         LOVCOHAB = ifelse(LOVCOHAB < 0, NA, LOVCOHAB),
+         WOMENROL = ifelse(WOMENROL < 0, NA, WOMENROL),
+         MARABORT = ifelse(MARABORT < 0, NA, MARABORT),
+         HLPECONO = ifelse(HLPECONO < 0, NA, HLPECONO),
+         CHDOBEYP = ifelse(CHDOBEYP < 0, NA, CHDOBEYP),
+         HUSBWIFE = ifelse(HUSBWIFE < 0, NA, HUSBWIFE),
+         MARFUTUR = ifelse(MARFUTUR < 0, NA, MARFUTUR),
+         CHDFUTUR = ifelse(CHDFUTUR < 0, NA, CHDFUTUR),
+         FEJOBAFF = ifelse(FEJOBAFF < 0, NA, FEJOBAFF),
+         MAPAID = ifelse(MAPAID < 0, NA, MAPAID),
+         ABCHOOSE = ifelse(ABCHOOSE < 0, NA, ABCHOOSE),
+         HAPMAR = ifelse(HAPMAR < 0, NA, HAPMAR),
+         INFORAID = ifelse(INFORAID < 0, NA, INFORAID),
+         AIDOLD = ifelse(AIDOLD < 0, NA, AIDOLD),
+         GENCONF1 = ifelse(GENCONF1 < 0, NA, GENCONF1),
+         GENCONF2 = ifelse(GENCONF2 < 0, NA, GENCONF2),
+         GENCONF3 = ifelse(GENCONF3 < 0, NA, GENCONF3),
+         GENCONF4 = ifelse(GENCONF4 < 0, NA, GENCONF4),
+         GENCONF5 = ifelse(GENCONF5 < 0, NA, GENCONF5),
+         OLDWELF1 = ifelse(OLDWELF1 < 0, NA, OLDWELF1),
+         OLDWELF2 = ifelse(OLDWELF2 < 0, NA, OLDWELF2),
+         OLDWELF3 = ifelse(OLDWELF3 < 0, NA, OLDWELF3),
+         OLDCONT1 = ifelse(OLDCONT1 < 0, NA, OLDCONT1),
+         OLDCONT2 = ifelse(OLDCONT2 < 0, NA, OLDCONT2),
+         OLDCONT3 = ifelse(OLDCONT3 < 0, NA, OLDCONT3),
+         starts_with("GOV") = ifelse()
+         starts_with("P")
+  )
 
 
 # PARTYLR is outcome variable 
 
+icpsr_split <- initial_split(icpsr_reduced)
+
+icpsr_train <- training(icpsr_split) 
+
+icpsr_test <- testing(icpsr_split)
+
+
 
 
 korean_recipe <-
-  recipe(PARTYLR~., data = )
+  recipe(PARTYLR~., data = icpsr_reduced) |>
+  step_
 
 anes_cart_model <- 
   decision_tree() |>
