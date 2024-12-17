@@ -150,6 +150,7 @@ collect_metrics(anes_rf_resamples) # dropping obs doesn't hurt metrics significa
 
 :::{.callout-tip title="Accuracy vs. Brier vs. ROC-AUC"}
 Though all three metrics are helpful in determining model performance, all three are created differently: 
+
 **Accuracy**
 : How correct is the model overall? 
 
@@ -480,10 +481,7 @@ The KGSS Survey data ranges from 2003 to 2021; we found no need to truncate the 
 #| message: false
 #| warning: false
 
-load("data/38577-0001-Data.rda")
-
-kgss <-
-  da38577.0001
+load("data/kgss.RData")
 
 # Variable selection data cleaning for NA values 
 
