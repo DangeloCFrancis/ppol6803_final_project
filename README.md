@@ -20,7 +20,8 @@ the Resolute Desk spawned three questions:
 
 ## Project Specifics 
 
-This project is written *entirely* in [R](https://www.r-project.org/). 
+This project is written *entirely* in [R](https://www.r-project.org/) and 
+[RStudio](https://posit.co/download/rstudio-desktop/) v2024.09.1+394. 
 To run, download the `predicting_voter_politics.qmd` file. Then,
 install *all* necessary packages indicated in the **library setup** section.
 
