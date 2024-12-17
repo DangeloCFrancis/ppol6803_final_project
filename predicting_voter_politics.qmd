@@ -1,0 +1,1093 @@
+---
+title: "Predicting Party Identification using Socioeconomic Characterisitcs"
+author: "D'Angelo Francis; Su Yeon Seo; Yuxiang Su"
+format: html
+embed-resources: true
+code-fold: true
+code-overflow: scroll
+code-line-numbers: true
+toc: true
+editor_options: 
+  chunk_output_type: console
+lightbox: true
+---
+
+:::{.callout-warning}
+
+Please be aware that a full render of this document will take approximately 15 minutes and uses significant amounts of system memory. Ensure that all the code is 'correct' and will execute during the render process.
+
+:::
+
+## Purpose
+
+Our research project seeks to identify the key characteristics to identify and predict how a voter votes. 
+This project utilizes random forests and bootstrap aggregation (bagged) trees model to predict the probability that a survey respondent's political identification. 
+
+## Methodology 
+
+We trained our models not only for the United States, but for the Republic of Korea ("South Korea"), and the People's Republic of China ('mainland China' or 'China') as well. The data for our US models is survey data from the American National Election Studies, or ANES,  [Time Series Cumulative Data File 1948-2020](https://electionstudies.org/data-center/anes-time-series-cumulative-data-file/), a collaboration between Duke University,the University of Michigan,the University of Texas at Austin (UT Austin), Stanford University, and the National Science Foundation (NSF). For the KGSS model, we used survey data from the Inter-University Consortium for Political and Social Research (ICPSR) [Korean General Social Survey 2003-2021](https://www.icpsr.umich.edu/web/ICPSR/studies/38577)—or KGSS. For the Chinese model,we are using  survey data from the [*Asian Barometer* Asian Democracy Survey](https://www.asianbarometer.org/datar?page=d10), an ongoing-research project of the Hu Fu Center for East Asia Democratic Studies at National Taiwan University (NTU).
+
+For each model, we used questions that ask survey respondents about political leanings (e.g., *"Generally speaking, do you usually think of yourself as a Republican, a Democrat, an Independent, or what?"*) as the outcome variable our model will predict. The goal of the models are to *precisely* predict the political ID of survey respondents using responses from survey questions asking about politics, social sentiment, and demographic characteristics. 
+
+We use variable importance analysis to interpret the results from our tree models, and which survey questions and demographic characteristics are the best predictors of voters' political ID.
+
+:::{.callout-note}
+
+### Using 'Political ID' versus 'Vote'
+
+The original outcome variable for our models used questions that asked which party a survey respondent voted for. We decided *against* using such questions are variables since it is likely that a party's candidate could influence who a survey respondent votes for *despite* political ID. We believe that political ID is a more reliable choice for our model to predict, though this does not rule out predicting voting behavior in the future.
+
+:::
+
+## Building a U.S. Voter Political Identification Model
+
+```{r}
+#| label: library setup 
+#| message: false
+#| warning: false
+
+set.seed(41224) # Euro style date for December 4,2024
+
+# core packages
+
+library(tidyverse)
+library(tidymodels) # use case weights 
+library(readxl)
+library(baguette)
+library(vip)
+library(pROC)
+library(srvyr)
+library(haven)
+library(car) # for vif 
+
+# visualization packages
+
+library(patchwork) # easy combine plots
+library(ggthemes)
+
+# Global Options
+
+theme_set(theme_clean())
+```
+
+For the US model, we knew that it wouldn't make sense to incorporate survey questions from over 70 years ago. Responses to questions about topics like LGBTQ rights, the Black Power movement, or the threat of communism would likely hurt the models predictive performance. We decided to narrow the scope of our models to the years 2000-2020 to take advantage of the significant, but relatively smaller political shift over the last 20 years rather than 76 years.  
+
+The cumulative data set contains over one thousand variables—each representing a question asked to survey respondents. For a variable to appear in the cumulative data set, it must be a question asked in at least three surveys. Due to narrowing the time frame of our US models, some variables were removed due to having no observations. We used a threshold of one thousand "NAs" to select whether a variable is included in the model or not. If a variable has over one thousand NAs, it was dropped from the final modeling set. Of the 1,030 variables and 68,224 observations in the original data set, our data set consists of 72 variables (including case weights and outcome variable) and 9,741 observations—or less than one percent of the variables available and approximately 14 percent of the original observations, respectively.
+
+```{r}
+#| label: ANES data loading and variable selection 
+#| warning: false
+#| message: false
+
+# read data in - see README for link
+
+anes_1948_2020 <- 
+  read_csv("data/anes_timeseries_cdf_csv_20220916.csv")
+
+# tidying, getting years to 2000 - 2020 and pre-election vs post-election
+
+anes_2000_2020 <- 
+  anes_1948_2020 |>
+  select(
+    # Year
+    VCF0004, 
+    
+    # Weight
+    VCF9999, # post-election weight
+    
+    # Completion
+    VCF0013, # post-election
+    VCF0014, # pre-election
+    VCF0748, # voted on election day or before
+    
+    # Dependent Variable(s)
+    VCF0302, # initial party identification response
+    VCF0303, # party identification response
+    VCF0705, # vote for president - major parties and other
+    
+    # Demographic
+    VCF0101, # age
+    VCF0104, # gender
+    VCF0105b, # race-ethnicity
+    VCF0110, # education
+    VCF0147, # marital status
+    VCF0111, # urbanism (not available after 2000, drop or generated by spatial information)
+    
+    # Economic Condition
+    VCF0114, # family-income
+    VCF0116, # work status
+    VCF0151, # occupation group (not available)
+    VCF0146, # home ownership
+    VCF9224, # stock market investment
+    
+    # Ideology
+    VCF0128, # religion
+    VCF0201:VCF0291, # attitude to different interest groups
+    matches("^VCF08"), # policy preference
+    matches("^VCF92"), # political opinion & VCF9277-82 personal info
+    
+    # Family Information
+    VCF0306, # party identification of R's father
+    VCF0307, # party identification of R's mother
+    VCF0308, # political interest of R's father
+    VCF0309, # political interest of R's mother
+    VCF0138, # number of children in family
+  
+    
+    # Spatial Information
+    VCF0900, # congressional district of residence
+    VCF0900b, # state and congressional district - fips
+    VCF0900c, # state and congressional district - postal abbrev and cd
+    VCF0901a, # state code - fips
+    VCF0901b, # state postal abbrev
+  ) |>
+  filter(VCF0004 %in% c(2000:2020), 
+         VCF0014 == 1 & VCF0013 == 1, 
+         is.na(VCF9999) == FALSE,
+         VCF0748 %in% c(1,5), 
+         VCF0705 > 0, # 0 - did not vote, declined to answer
+         ) |> 
+  # transform missing value to NAs
+  mutate(VCF0101 = ifelse(VCF0101 == 0, NA, VCF0101)) |>
+  mutate(VCF0104 = ifelse(VCF0104 == 0, NA, VCF0104)) |>
+  mutate(VCF0105b = ifelse(VCF0105b == 9, NA, VCF0105b)) |>
+  mutate(VCF0110 = ifelse(VCF0110 == 0, NA, VCF0110)) |>
+  mutate(VCF0147 = ifelse(VCF0147 %in% c(8,9), NA, VCF0147)) |>
+  mutate(VCF0114 = ifelse(VCF0114 == 0, NA, VCF0114)) |>
+  mutate(VCF0116 = ifelse(VCF0116 == 9, NA, VCF0116)) |>
+  mutate(VCF0146 = ifelse(VCF0146 == 9, NA, VCF0146)) |> # high percentage of missing data
+  mutate(VCF9224 = ifelse(VCF9224 %in% c(-8,-9), NA, VCF9224)) |>
+  mutate(VCF0128 = ifelse(VCF0128 == 0, NA, VCF0128)) |>
+  mutate(across(VCF0201:VCF0253, ~ ifelse(. %in% c(98, 99), NA, .))) |>
+  mutate(VCF0290 = ifelse(VCF0290 %in% c(998, 999), NA, VCF0290)) |>
+  mutate(VCF0291 = ifelse(VCF0291 %in% c(998, 999), NA, VCF0291)) |>
+  mutate(VCF0801 = ifelse(VCF0801 %in% c(98, 99), NA, VCF0801)) |>
+  mutate(VCF0803 = ifelse(VCF0803 %in% c(0, 9), NA, VCF0803)) |>
+  mutate(VCF0804 = ifelse(VCF0804 %in% c(0, 9), NA, VCF0804)) |>
+  mutate(across(VCF0806:VCF0823, ~ ifelse(. %in% c(0, 9), NA, .))) |>
+  mutate(VCF0825 = ifelse(VCF0825 %in% c(0, 9), NA, VCF0825)) |>
+  mutate(VCF0826 = ifelse(VCF0825 %in% c(0, 9), NA, VCF0825)) |>
+  mutate(VCF0828 = ifelse(VCF0828 == 0, NA, VCF0828)) |>
+  mutate(VCF0829 = ifelse(VCF0829 == 0, NA, VCF0829)) |>
+  mutate(VCF0830 = ifelse(VCF0830 == 0, NA, VCF0830)) |>
+  mutate(VCF0838 = ifelse(VCF0838 == 0, NA, VCF0838)) |>
+  mutate(VCF0839 = ifelse(VCF0839 == 0, NA, VCF0839)) |>
+  mutate(VCF0843 = ifelse(VCF0843 == 0, NA, VCF0843)) |>
+  mutate(VCF0846 = ifelse(VCF0846 %in% c(0,8), NA, VCF0846)) |>
+  mutate(VCF0849 = ifelse(VCF0849 %in% c(0,9), NA, VCF0849)) |>
+  mutate(VCF0850 = ifelse(VCF0850 %in% c(0,9), NA, VCF0850)) |>
+  mutate(VCF0852 = ifelse(VCF0852 == 9, NA, VCF0852)) |>
+  mutate(VCF0853 = ifelse(VCF0853 == 9, NA, VCF0853)) |>
+  mutate(VCF0867 = ifelse(VCF0867 == 9, NA, VCF0867)) |>
+  mutate(VCF0870 = ifelse(VCF0870 %in% c(0,8), NA, VCF0870)) |>
+  mutate(VCF0871 = ifelse(VCF0871 %in% c(0,8,9), NA, VCF0871)) |>
+  mutate(VCF0872 = ifelse(VCF0872 %in% c(8,9), NA, VCF0872)) |>
+  mutate(VCF0876 = ifelse(VCF0876 == 9, NA, VCF0876)) |>
+  mutate(VCF0876a = ifelse(VCF0876a == 9, NA, VCF0876a)) |>
+  mutate(VCF0878 = ifelse(VCF0878 == 9, NA, VCF0878)) |>
+  mutate(VCF0879a = ifelse(VCF0879a == 9, NA, VCF0879a)) |>
+  mutate(VCF0880 = ifelse(VCF0880 %in% c(0,9), NA, VCF0880)) |>
+  mutate(VCF0880a = ifelse(VCF0880a %in% c(0,9), NA, VCF0880a)) |>
+  mutate(VCF0881 = ifelse(VCF0881 %in% c(0,9), NA, VCF0881)) |>
+  mutate(VCF0886 = ifelse(VCF0886 == 9, NA, VCF0886)) |>
+  mutate(VCF0888 = ifelse(VCF0888 == 9, NA, VCF0888)) |>
+  mutate(VCF0890 = ifelse(VCF0890 == 9, NA, VCF0890)) |>
+  mutate(VCF0894 = ifelse(VCF0894 == 9, NA, VCF0894)) |>
+  mutate(VCF0302 = ifelse(VCF0302 %in% c(8,9), NA, VCF0302))|>
+  select(-where(~sum(is.na(.)) > 1000)) |>
+  select(-c(VCF0004,VCF0901b, VCF0013,VCF0014, VCF0705, VCF0303,VCF0218,VCF0224,
+            VCF0291,VCF0218,VCF0218,VCF0211,VCF0290,VCF0212, VCF0291))
+
+anes_2000_2020$VCF0302 <- factor(anes_2000_2020$VCF0302)
+
+```
+
+
+### Model 1: Random Forests model with resampling
+
+We used a random forests model with resampling to extract the most important survey question in determining a survey respondent's political ID. Our outcome variable **VCF0302**—*Party Identification of Respondent*— had 39 missing observations. The nature of survey data suggests that this data may not be missing at random, so we ran the models with the missing observations and without the observations. Since there were no significant changes in the models, we dropped the missing observations in **VCF0302**. To deal with missing information in our predictor variables, we used `step_impute_bag()` to 'fill in' the missing information. 
+
+:::{.callout-important title="Imputation Runtime"}
+Since the number of variables made using a high number of trees *very* difficult with respect to code runtime, we settled on using `trees = 5` for all predictor imputations. 
+
+We acknowledge that our results may change should the number of trees be increased of imputations.
+:::
+
+
+```{r}
+#| label: random forests model, using VCF0302 as dependent variable
+#| warning: false
+#| message: false
+
+# Only 39 obs missing in VCF0302 out of thousands; shouldn't impact result if dropped
+anes_2000_2020 <- 
+  anes_2000_2020 |>
+  mutate(VCF9999 = importance_weights(VCF9999)) |> # create recipe case weight
+  filter(is.na(VCF0302) == FALSE)
+
+anes_split <- initial_split(anes_2000_2020)
+
+anes_train <- training(x = anes_split)
+
+anes_test <- testing(x = anes_split)
+
+anes_folds <- vfold_cv(data = anes_train, v = 5)
+
+anes_recipe <- 
+  recipe(formula = VCF0302~ ., data = anes_train) |>
+  step_impute_bag(all_predictors(), trees = 5)
+  
+
+anes_rf_mod <- 
+    rand_forest(
+      trees = 500,
+      mtry = 10,
+      min_n = 4
+    ) |>
+  set_mode(mode = "classification") |>
+  set_engine(
+    engine = "ranger", 
+    importance = "impurity",
+    num.threads = 4
+  )
+
+anes_rf_wf <- 
+  workflow() |>
+  add_recipe(anes_recipe) |>
+  add_model(anes_rf_mod) |>
+  add_case_weights(VCF9999)
+
+anes_rf_resamples <- 
+  anes_rf_wf |>
+  fit_resamples(resamples = anes_folds)
+
+collect_metrics(anes_rf_resamples) # dropping obs doesn't hurt metrics significantly
+```
+
+
+:::{.callout-tip title="Accuracy vs. Brier vs. ROC-AUC"}
+Though all three metrics are helpful in determining model performance, all three are created differently: 
+**Accuracy**
+: How correct is the model overall? 
+
+**Brier Score**
+: This is the [mean square error](https://library.virginia.edu/data/articles/a-brief-on-brier-scores) with respect to forecasts. A value of 0 is excellent, and a value of 1 is poor *if* the model deals with a binary choice. If the number of possible categories exceeds 2, the multinomial Brier score is used which is a sum of the mean squared errors with a range of [0,2]. Higher numbers are still worse than lower numbers with the multinominal Brier score.  
+
+**ROC-AUC**
+: Stands for *R*eceiver-*o*perating *c*haracteristic_*A*rea *u*nder the *c*urve. This maps the true positive rate of our model. The closer the value is to 1, the better the model is at predicting events. The AUC is the probability that the mode will predict an event occurring ($P(occur|X_n = 1)$) over an event *not* occurring correctly ($P(\neg occur|X_n = 0)$).
+:::
+
+The accuracy of the random forest model is impressive—68.4 percent! Our ROC-AUC value is approximately .8, indicating a good model. However, our brier score is a decent .22. 
+
+```{r}
+#| label: check metric for last model fit
+#| message: false
+#| warning: false
+
+anes_rf_final <- 
+  anes_rf_wf |>
+  last_fit(anes_split)
+
+anes_rf_final |>
+  collect_metrics()
+```
+
+Assessing out final fit metrics, our metrics still point to an excellent predictive model for *VCF0302* using random forests. Now, let's look at which variables—or questions—are driving this model's performance.
+
+#### Random Forest variable importance
+
+```{r}
+#| label: ANES variable importance plot extract fit
+#| message: false
+#| warning: false
+
+anes_vip_plot <- 
+  anes_rf_final |>
+  extract_fit_parsnip() |>
+  vip(num_features = 20)
+```
+
+```{r}
+#| label: ANES variable importance plot
+#| message: false
+#| warning: false
+#| include: false
+
+
+anes_vip_plot + 
+  labs(
+    title = str_wrap("It's (still) the Economy, Stupid—Variable Importance in Predicting American Voter Political Identification", width = 100),
+    subtitle = str_wrap("VCF9205—a question that asks repondents to choose which party would be best at managing the economy—appears to be the most important factor of identifying a respondent's political ID in the last 24 years",width = 100),
+    caption = str_wrap("Source: ANES Cumulative Time Series Data 2000-2020")
+    ) 
+    
+
+ggsave(filename = "anes_rf_vip_plot_VCF0302.png", width = 11, height = 8.5)
+
+ggsave(filename = "anes_rf_vip_plot_VCF0302.pdf",width = 11, height = 8.5)
+
+```
+![ANES Variable Importance](anes_rf_vip_plot_VCF0302.png)
+
+
+For our variable importance plot, we selected the top 20 variable that help our model's accuracy. Leading by a wide margin is **VCF9205**—*Which party would do a better job handling the nation's economy?*. Rounding out the top 5 are: 
+
+- **VCF0801**: *Thermometer index - Rating of liberals and conservatives*[^1]
+- **VCF0849**: *Liberal-Conservative position 1984- Collapsed*[^2]
+- **VCF9217**: *Does Respondent approve or disapprove of the way current U.S. President is handling foreign relations?*
+- **VCF0101**: *Respondent's Age*
+
+Most of the questions that contributed to the model's performance are thermometer questions (in order of importance):
+
+- **VCF0253**: *Feminists* 
+- **VCF0210**: *Labor Unions*
+- **VCF0234**: *Christian Fundamentalists* 
+- **VCF0228**: *Congress*
+- **VCF0209**: *Big Business* 
+- **VCF0232**: *Gays and Lesbians* 
+- **VCF0206**: *Blacks* 
+- **VCF0207**: *Whites* 
+
+We anticipate that question **VCF0838**-*By law, when should abortion be allowed?*— could be higher in variable importance once ANES releases a version including election data from 2022 and 2024. Both years had major impacts on voting trends political identification in the United States, as the United States Supreme Court under a 6-3 conservative majority voted to overturn *Roe v. Wade* in June 2022, which guaranteed the right to an abortion across the United States.[^3] The 2024 Presidential election featured Democratic campaigns attacking Republican candidates about Project 2025 and plans for a national abortion ban.[^4] 
+
+We also anticipate that question **VCF0867a**—*Affirmative Action in hiring/promotion*—may also increase in importance in future editions of the ANES survey given the Supreme Court also overturned precedent for affirmative action in the college application process in June 2023.[^5]
+
+Most surprising is that question **VCF9239**-*How important is gun control issue to respondent*— is at the very bottom below the aforementioned questions. To investigate this further, we ran a regression to test for potential multi-collinearity:
+
+```{r}
+#| label: checking for VIP inflation
+#| warning: false
+#| message: false
+
+
+lm_model <- lm(VCF9239 ~ VCF9205 + VCF0801 + VCF0849 + VCF9217 + VCF0101 + VCF0253 + VCF0830 + VCF0901a + VCF0210 + VCF0228 + VCF0209 + VCF0234 + VCF0838 + VCF0105b + VCF0824 + VCF0232 + VCF0232 + VCF0206 + VCF9238 + VCF0207, data = anes_train)
+
+# calculate vif
+
+vif_values <- vif(lm_model)
+
+vif_values
+```
+
+The variance inflation factors (VIF) from this regression indicate that there is no multi-collinearity between VCF9239 and the other top 19 variables. Is this a case of overestimating the effect of gun control on voter political ID, specifically in the media? 
+
+Surprisingly, question **VCF0105b**—*Four category Race-Ethnicity Summary*, appears closer to the bottom. We are curious as to whether race is also overestimated as a key variable in a voter's political identification. The rightward trend we saw in the 2024 Presidential election seems to suggests that race isn't as big a divider as it appears, at least in the current political *zeitgeist*.[^6]
+
+Now, we can test the model's actual predictive performance for precision and recall.
+
+[^1]: A survey 'thermometer' is a scale (0-100) which respondents are asked how warmly or coldly they perceive the subject of the thermometer question. Responses between 0-96 degrees were coded 'as-is' and responses between 97-100 degrees were coded as being 97-100 degrees (binned). 
+
+[^2]: To clarify, this question was asked from 1984 *and onward*, not only in the 1984 survey.
+
+[^3]: [Roe v. Wade, Center for Reproductive Rights June 2022](https://reproductiverights.org/roe-v-wade/#:~:text=In%20June%202022%2C%20in%20a,federal%20constitutional%20right%20to%20abortion.)
+
+[^4]: Sherman, C., [Project 2025: What does the rightwing blueprint say about abortion?](https://www.theguardian.com/us-news/article/2024/aug/05/project-2025-abortion), 5 August 2024
+
+[^5]: Totenberg, N., [Supreme Court guts affirmative action, effectively ending race-conscious admissions](https://www.npr.org/2023/06/29/1181138066/affirmative-action-supreme-court-decision)
+
+[^6]: Sides, J., [How to think about the "racial realignment" in U.S. politics](https://goodauthority.org/news/election-2024-racial-realignment-us-politics/), 18 November 2024
+
+
+```{r}
+#| label: random forest class probability predictions 
+
+
+anes_rf_final_wf <- 
+  anes_rf_final |>
+  extract_workflow()
+
+anes_rf_predictions <- 
+  predict(anes_rf_final_wf, new_data = anes_test) |>
+  bind_cols(
+    predict(anes_rf_final_wf, new_data = anes_test, type = "prob"),
+    anes_test |>
+    select(VCF0302)
+  )
+
+select(anes_rf_predictions, VCF0302, starts_with(".pred"))
+
+```
+
+
+:::{.callout-tip title="Interpreting model predictions"}
+This tibble provides the predicted 'class' of each observation in the training set. Each class corresponds to the following: 
+
+- 1: *Republican* 
+- 2: *Independent* 
+- 3: *No preference;none;neither*
+- 4: *Other* 
+- 5: *Democrat* 
+
+The value in **VCF0302** is the 'true' class, and the titular **.pred_class** is the predicted class given by the model.
+::::
+
+
+```{r}
+#| label: random forest precision and recall estimates with confusion matrix 
+#| warning: false
+#| message: false
+
+anes_rf_predictions |>
+  precision(
+    truth = VCF0302,
+    estimate = .pred_class)
+
+anes_rf_predictions |>
+  recall(
+    truth = VCF0302,
+    estimate = .pred_class
+  )
+
+anes_rf_confmat <-
+  conf_mat(data = anes_rf_predictions,
+         truth = VCF0302,
+         estimate = .pred_class)
+
+anes_rf_confmat
+
+```
+
+Our precision is approximately 66 percent using the [macro estimator](https://yardstick.tidymodels.org/articles/multiclass.html)—similar to our accuracy. Our recall rate, or 'true positive rate' (also using the macro estimator), is decent at approximately 42 percent. 
+
+The random forest model yields good predictions of voter political identification in the United States. This model is ready for implementation for amateur pollsters to Political Action Committee leadership. But, could we do better by using a bootstrap aggregation approach with hyper-parameter tuning?
+
+### Model 2: Bagged Trees with Hyper-Parameter Tuning and Re-sampling
+
+Now, we are building a bagged trees model using hyper-parameter tuning and re-sampling to compare which 'tree' model is the best.
+
+```{r}
+#| label: bagging with hp tuning and resample
+#| warning: false
+#| message: false
+
+anes_bagged_trees_model <- 
+  bag_tree(cost_complexity = tune(), tree_depth = tune()) |>
+  set_engine("rpart") |> 
+  set_mode("classification")
+
+anes_bagged_folds <- vfold_cv(data = anes_train, v = 5)
+
+anes_bagged_grid <- grid_regular(cost_complexity(),tree_depth(), levels = 3)
+
+anes_bagged_trees_wf <-
+  workflow() |>
+  add_recipe(anes_recipe) |>
+  add_model(spec = anes_bagged_trees_model) |>
+  add_case_weights(VCF9999)
+
+anes_bagged_trees_resamples <- 
+  anes_bagged_trees_wf |>
+  tune_grid(
+    resamples = anes_bagged_folds,
+    grid = anes_bagged_grid
+  )
+
+collect_metrics(anes_bagged_trees_resamples) 
+```
+
+Since we are tuning the bagged trees model's `tree_depth()` and `cost_complexity()`, we have multiple models to choose from. We can use `show_best()` and `select_best()` to isolate the model we want to use for predictions.
+
+```{r}
+#| label: showing best hyperparameter for bagged trees model
+#| warning: false
+#| message: false
+
+anes_bagged_trees_resamples |>
+  show_best(metric = "accuracy")
+```
+
+Using accuracy as the metric[^7], our fifth model where mean accuracy is approximately 67 percent, `tree_depth = 8`,and `cost_complexity = 0.00000316` is the best model. Now we can use `select_best()` to finalize our bagged trees model.
+
+[^7]: The reason why we are using accuracy as a metric and not ROC-AUC is because of the estimator used. When we use accuracy, `yardstick` uses a 'multi-class' estimator since it detects that the outcome variable is a survey response with multiple answers, each coded as factors. When we use ROC-AUC, `yardstick` uses the 'hand_till' estimator, which does not work well with case weights. 
+
+```{r}
+#| label: selecting and using best parameters 
+#| warning: false
+#| message: false
+
+
+best_bagged_value <- 
+  anes_bagged_trees_resamples |>
+  select_best(metric = "accuracy")
+
+anes_bagged_best_wf <- 
+  anes_bagged_trees_wf |>
+  finalize_workflow(best_bagged_value)
+```
+
+Now, we run our bagged tree model with the best parameters given by hyperparameter tuning: 
+
+```{r}
+#| label: applying hyperparametering tuning to final bagged tree model
+#| warning: false
+#| message: false
+
+anes_bagged_finalized_fit <- 
+  anes_bagged_best_wf |>
+  last_fit(anes_split)
+
+anes_bagged_fitted_wf <- 
+  anes_bagged_finalized_fit |>
+  extract_workflow()
+
+anes_bagged_predictions <-
+  predict(anes_bagged_fitted_wf, new_data = anes_test) |>
+  bind_cols(
+    predict(anes_bagged_fitted_wf, new_data = anes_test, type = "prob"),
+    anes_test |>
+    select(VCF0302)
+  )
+
+select(anes_bagged_predictions, VCF0302, .pred_class, starts_with(".pred"))
+
+```
+
+```{r}
+#| label: precision and recall of bagged trees model with best hyperparameter 
+#| warning: false
+#| message: false
+
+anes_bagged_predictions |>
+  precision(
+    truth = VCF0302,
+    estimate = .pred_class)
+
+anes_bagged_predictions |>
+  recall(
+    truth = VCF0302,
+    estimate = .pred_class
+  )
+
+anes_bagged_confmat <-
+  conf_mat(data = anes_bagged_predictions,
+         truth = VCF0302,
+         estimate = .pred_class)
+
+anes_bagged_confmat # values for markdown table
+
+```
+
+The precision of this model after hyper-parameter tuning and re-sampling is approximately 48 percent. The recall rate is approximately 41 percent. I believe that we could get away with implementing this model in the American political arena. 
+
+### Bagged Trees vs Random Forests
+
+Both models had reasonably high accuracy and recall rates. However, the random forest model is more precise than the bagged trees model. The precision of the random forest model is almost 20 percentage points higher than that of the bagged trees model. We believe this can be attributed to the nature of each model. Random forest models 'de-correlate' the trees and introduce some randomness Each tree is made worse off from before to improve the overall model fit. Bagged trees cannot do this since it uses bootstrapping to build its trees. Since the ANES survey is bound to have highly correlated covariates, it is no surprise the the random forest model outperformed the bagged trees model with respect to precision.
+
+## Comparing Apple Pie to *Injeolmi*: Are American and South Korean Survey Respondents Comparable with Respect to Voter Political Identification? 
+
+Our random forests model did reasonably well in predicting the political ID of American survey respondents. But the United States does not have a monopoly on democracy. 2024 is known as the "Year of Elections, as more than 60 countries had elections.[^8] One of these countries is South Korea. We believe that South Korea and the United States have a comparable political climate. Not only has South Korea experienced an presidential election, it has also recently experienced an attempted coup by the sitting president, Yoon Suk Yeol[^9]. Do these political similarities stem from voters' political identification stemming from the same category of variables as American voters?
+
+[^8]: Wike, R.,Fagan,M.,Clancy,L.; [Global Elections in 2024: What We Learned in a Year of Political Disruption](https://www.pewresearch.org/global/2024/12/11/global-elections-in-2024-what-we-learned-in-a-year-of-political-disruption/), 11 December 2024
+
+[^9]: Hyung-Jin Kim; Kim Tong-Hyung; [South Korea's parliament votes to impeach President Yoon Suk Yeol over his martial law order](https://apnews.com/article/south-korea-martial-law-yoon-impeach-6432768aafc8b55be26215667e3c19d0), 14 December 2024
+
+
+### KGSS Survey Data 
+
+The KGSS Survey data ranges from 2003 to 2021; we found no need to truncate the time frame. The biggest hurdle to identifying South Korean voter political ID was variable selection. The main data set from ICPSR contains over three thousand variables and approximately 21,000 observations. Due to time constraints, we were unable to fully explore the data set, and settled with selecting any variable that is plausibly connected to political affiliation. Of the 3,125 variables, we selected 91 variables (~.03 percent) from the main data set. We did not drop observations from the reduced data set nor find any missing values. The outcome variable for the KGSS model is **PARTYLR**—*Political Orientation*, which is coded as the following: 
+
+- **1**: *Very liberal*
+- **2**: *Somewhat liberal*
+- **3**: *Neither liberal or conservative*
+- **4**: *Somewhat conservative*
+- **5**: *Very conservative*
+
+```{r}
+#| label: setup for using KGSS data
+#| message: false
+#| warning: false
+
+load("data/38577-0001-Data.rda")
+
+kgss <-
+  da38577.0001
+
+# Variable selection data cleaning for NA values 
+
+kgss_reduced <- 
+  kgss |>
+  select(
+    PARTYLR, FINALWT,SEX,AGE, MARITAL,EDUC,TECHHIGH,SPEDUC,PAEDUC,MAEDUC,
+    RINCOME,OCC,SATFIN,FINALTER,STDLIVIN,
+    WORRY316,HELPPARE,KIDNUM10,PARSOL,CLASS,HOUSTYPE,HOUSOWNS,BLOODTYP,FEAR,
+    FAMILY,FRIENDS,LEISURE,MONEY,EDUCATN,HEALTH,RELIGION,GETAHEAD,
+    CULTBIAS1:CULTBIAS12,DONN1:DONN8,INDDIFF,IDEALFAM,MARIGOLD,WOMENCHD,
+    LOVCOHAB,WOMENROL,MARABORT,HLPECONO,CHDOBEYP,HUSBWIFE,MARFUTUR,CHDFUTUR,
+    FEJOBAFF,MAPAID,ABCHOOSE,HAPMAR,INFORAID,AIDOLD,
+    GENCONF1:GENCONF5,OLDWELF1:OLDWELF3,OLDCONT1:OLDCONT3,CONGOVT,NATVSBUS,CURGOV,
+    NORTHPOL, DEMOATT1:DEMOATT4)
+    
+kgss_reduced <-
+  kgss_reduced |>
+  mutate(FINALWT = importance_weights(FINALWT),
+         SEX = ifelse(SEX %in% c("-1","-8"), NA, SEX), 
+         AGE = ifelse(AGE %in% c("-1","-8"), NA, AGE),
+         MARITAL = ifelse(MARITAL %in% c("-1","-8"), NA, MARITAL),
+         EDUC = ifelse(EDUC %in% c("-1","-8"), NA, EDUC),
+         TECHHIGH = ifelse(TECHHIGH %in% c("-1","-8"), NA, TECHHIGH),
+         SPEDUC = ifelse(SPEDUC %in% c("-1","-8"),NA, SPEDUC),
+         PAEDUC = ifelse(PAEDUC %in% c("-1","-8"), NA, PAEDUC),
+         MAEDUC = ifelse(MAEDUC %in% c("-1","-8"), NA, MAEDUC),
+         RINCOME = ifelse(RINCOME %in% c("-1","-8"), NA, RINCOME),
+         OCC = ifelse(OCC %in% c("-1","-8"), NA, OCC),
+         SATFIN = ifelse(SATFIN %in% c("-1","-8"), NA, SATFIN),
+         FINALTER = ifelse(FINALTER %in% c("-1","-8"), NA, FINALTER),
+         STDLIVIN = ifelse(STDLIVIN %in% c("-1","-8"), NA, STDLIVIN),
+         WORRY316 = ifelse(WORRY316 %in% c("-1","-8"), NA, WORRY316),
+         HELPPARE = ifelse(HELPPARE %in% c("-1","-8"), NA, HELPPARE),
+         KIDNUM10 = ifelse(KIDNUM10 %in% c("-1","-8"), NA, KIDNUM10),
+         PARSOL = ifelse(PARSOL %in% c("-1","-8"), NA, PARSOL),
+         CLASS = ifelse(CLASS %in% c("-1","-8"), NA, CLASS),
+         HOUSTYPE = ifelse(HOUSTYPE %in% c("-1","-8"), NA, HOUSTYPE),
+         HOUSOWNS = ifelse(HOUSOWNS %in% c("-1","-8"), NA, HOUSOWNS),
+         BLOODTYP = ifelse(BLOODTYP %in% c("-1","-8"), NA, BLOODTYP),
+         FEAR = ifelse(FEAR %in% c("-1","-8"), NA, FEAR),
+         FAMILY = ifelse(FAMILY %in% c("-1","-8"), NA, FAMILY),
+         FRIENDS = ifelse(FRIENDS %in% c("-1","-8"), NA, FRIENDS),
+         LEISURE = ifelse(LEISURE %in% c("-1","-8"), NA, LEISURE),
+         MONEY = ifelse(MONEY %in% c("-1","-8"), NA, MONEY),
+         EDUCATN = ifelse(EDUCATN %in% c("-1","-8"), NA, EDUCATN),
+         HEALTH = ifelse(HEALTH %in% c("-1","-8"), NA, HEALTH),
+         RELIGION = ifelse(RELIGION %in% c("-1","-8"), NA, RELIGION),
+         GETAHEAD = ifelse(GETAHEAD %in% c("-1","-8"), NA, GETAHEAD),
+         CULTBIAS1 = ifelse(CULTBIAS1 %in% c("-1","-8"), NA, CULTBIAS1),
+         CULTBIAS2 = ifelse(CULTBIAS2 %in% c("-1","-8"), NA, CULTBIAS1),
+         CULTBIAS3 = ifelse(CULTBIAS3 %in% c("-1","-8"), NA, CULTBIAS3),
+         CULTBIAS4 = ifelse(CULTBIAS4 %in% c("-1","-8"), NA, CULTBIAS4),
+         CULTBIAS5 = ifelse(CULTBIAS5 %in% c("-1","-8"), NA, CULTBIAS5),
+         CULTBIAS6 = ifelse(CULTBIAS6 %in% c("-1","-8"), NA, CULTBIAS6),
+         CULTBIAS7 = ifelse(CULTBIAS7 %in% c("-1","-8"), NA, CULTBIAS7),
+         CULTBIAS8 = ifelse(CULTBIAS8 %in% c("-1","-8"), NA, CULTBIAS8),
+         CULTBIAS9 = ifelse(CULTBIAS9 %in% c("-1","-8"), NA, CULTBIAS9),
+         CULTBIAS10 = ifelse(CULTBIAS10 %in% c("-1","-8"), NA, CULTBIAS10),
+         CULTBIAS11 = ifelse(CULTBIAS11 %in% c("-1","-8"), NA, CULTBIAS11),
+         CULTBIAS12 = ifelse(CULTBIAS12 %in% c("-1","-8"), NA, CULTBIAS12),
+         DONN1 = ifelse(DONN1 %in% c("-1","-8"), NA, DONN1),
+         DONN2 = ifelse(DONN2 %in% c("-1","-8"), NA, DONN2),
+         DONN3 = ifelse(DONN3 %in% c("-1","-8"), NA, DONN3),
+         DONN4 = ifelse(DONN4 %in% c("-1","-8"), NA, DONN4),
+         DONN5 = ifelse(DONN5 %in% c("-1","-8"), NA, DONN5),
+         DONN6 = ifelse(DONN6 %in% c("-1","-8"), NA, DONN6),
+         DONN7 = ifelse(DONN7 %in% c("-1","-8"), NA, DONN7),
+         DONN8 = ifelse(DONN8 %in% c("-1","-8"), NA, DONN8),
+         INDDIFF = ifelse(INDDIFF %in% c("-1","-8"), NA, INDDIFF),
+         IDEALFAM = ifelse(IDEALFAM %in% c("-1","-8"), NA, IDEALFAM),
+         MARIGOLD = ifelse(MARIGOLD %in% c("-1","-8"), NA, MARIGOLD),
+         WOMENCHD = ifelse(WOMENCHD %in% c("-1","-8"), NA, WOMENCHD),
+         LOVCOHAB = ifelse(LOVCOHAB %in% c("-1","-8"), NA, LOVCOHAB),
+         WOMENROL = ifelse(WOMENROL %in% c("-1","-8"), NA, WOMENROL),
+         MARABORT = ifelse(MARABORT %in% c("-1","-8"), NA, MARABORT),
+         HLPECONO = ifelse(HLPECONO %in% c("-1","-8"), NA, HLPECONO),
+         CHDOBEYP = ifelse(CHDOBEYP %in% c("-1","-8"), NA, CHDOBEYP),
+         HUSBWIFE = ifelse(HUSBWIFE %in% c("-1","-8"), NA, HUSBWIFE),
+         MARFUTUR = ifelse(MARFUTUR %in% c("-1","-8"), NA, MARFUTUR),
+         CHDFUTUR = ifelse(CHDFUTUR %in% c("-1","-8"), NA, CHDFUTUR),
+         FEJOBAFF = ifelse(FEJOBAFF %in% c("-1","-8"), NA, FEJOBAFF),
+         MAPAID = ifelse(MAPAID  %in% c("-1","-8"), NA, MAPAID),
+         ABCHOOSE = ifelse(ABCHOOSE %in% c("-1","-8"), NA, ABCHOOSE),
+         HAPMAR = ifelse(HAPMAR %in% c("-1","-8"), NA, HAPMAR),
+         INFORAID = ifelse(INFORAID %in% c("-1","-8"), NA, INFORAID),
+         AIDOLD = ifelse(AIDOLD %in% c("-1","-8"), NA, AIDOLD),
+         GENCONF1 = ifelse(GENCONF1 %in% c("-1","-8"), NA, GENCONF1),
+         GENCONF2 = ifelse(GENCONF2 %in% c("-1","-8"), NA, GENCONF2),
+         GENCONF3 = ifelse(GENCONF3 %in% c("-1","-8"), NA, GENCONF3),
+         GENCONF4 = ifelse(GENCONF4 %in% c("-1","-8"), NA, GENCONF4),
+         GENCONF5 = ifelse(GENCONF5 %in% c("-1","-8"), NA, GENCONF5),
+         OLDWELF1 = ifelse(OLDWELF1 %in% c("-1","-8"), NA, OLDWELF1),
+         OLDWELF2 = ifelse(OLDWELF2 %in% c("-1","-8"), NA, OLDWELF2),
+         OLDWELF3 = ifelse(OLDWELF3 %in% c("-1","-8"), NA, OLDWELF3),
+         OLDCONT1 = ifelse(OLDCONT1 %in% c("-1","-8"), NA, OLDCONT1),
+         OLDCONT2 = ifelse(OLDCONT2 %in% c("-1","-8"), NA, OLDCONT2),
+         OLDCONT3 = ifelse(OLDCONT3 %in% c("-1","-8"), NA, OLDCONT3),
+         CONGOVT = ifelse(CONGOVT %in% c("-1","-8"), NA, CONGOVT),
+         NATVSBUS = ifelse(NATVSBUS %in% c("-1","-8"), NA, NATVSBUS),
+         CURGOV = ifelse(CURGOV %in% c("-1","-8"), NA, CURGOV),
+         NORTHPOL = ifelse(NORTHPOL %in% c("-1","-8"), NA, NORTHPOL),
+         DEMOATT1 = ifelse(DEMOATT1 %in% c("-1","-8"), NA, DEMOATT1),
+         DEMOATT2 = ifelse(DEMOATT2 %in% c("-1","-8"), NA, DEMOATT2),
+         DEMOATT3 = ifelse(DEMOATT3 %in% c("-1","-8"), NA, DEMOATT3),
+         DEMOATT4 = ifelse(DEMOATT4 %in% c("-1","-8"), NA, DEMOATT4),
+         PARTYLR = ifelse(PARTYLR %in% c("-1", "-8"), NA, PARTYLR),
+         PARTYLR = factor(PARTYLR)
+  )
+
+# PARTYLR is outcome variable 
+
+kgss_split <- 
+  kgss_reduced |>
+  initial_split(prop = .75)
+
+kgss_train <- training(kgss_split) 
+
+kgss_test <- testing(kgss_split)
+
+kgss_folds <- vfold_cv(data = kgss_train, v = 5)
+
+kgss_recipe <-
+  recipe(PARTYLR~., data = kgss_train) |>
+  step_impute_bag(all_predictors(), trees = 5) # can't go more than 5 trees or else runtime issues
+
+kgss_model <-
+  rand_forest(
+    trees = 500,
+    mtry = 5,
+    min_n = 4
+  ) |>
+  set_mode("classification") |>
+  set_engine(
+    engine = "ranger",
+    importance = "impurity",
+    num.threads = 4
+  )
+  
+kgss_rf_wf <- 
+  workflow() |>
+  add_recipe(kgss_recipe) |>
+  add_model(kgss_model) |>
+  add_case_weights(FINALWT)
+
+kgss_resamples <- 
+  kgss_rf_wf |>
+  fit_resamples(resamples = kgss_folds)
+
+collect_metrics(kgss_resamples) # the model sucks....?
+```
+
+Our random forest model for South Korean voter political identification does not perform as well as we thought. Its accuracy is approximately 37 percent, has a mediocre brier score of .36, and the ROC-AUC score leaves more to be desired. Let's look into the top 20 variables that our Korean model considers most important to its function.
+
+### KGSS Variable Importance 
+
+```{r}
+#| label: kgss vip plot last fit
+#| warning: false
+#| message: false
+
+kgss_rf_final <- 
+  kgss_rf_wf |>
+  last_fit(kgss_split)
+
+kgss_vip_plot <- 
+  kgss_rf_final |>
+  extract_fit_parsnip() |>
+  vip(num_features = 20)
+```
+
+```{r}
+#| label: kgss vip plot
+#| warning: false
+#| message: false
+#| include: false
+
+
+kgss_vip_plot +
+  labs(
+    title = str_wrap("The Gerontocracy of the Korean Selectorate: Variable Importance in Determining South Korean Political Identification", width = 100),
+    subtitle = str_wrap("A respondent's age is considered the most important factor in determing a South Korean voter's political identification", width = 100),
+    caption = "Source: Korean General Sociery Survey - ICPSR 2003-2021"
+    )
+
+ggsave(filename = "kgss_vip_plot.png", width = 11, height = 8.5)
+
+ggsave(filename = "kgss_vip_plot.pdf", width = 11, height = 8.5)
+
+```
+
+![KGSS Variable Importance](kgss_vip_plot.png)
+
+
+The KGSS random forest model yields completely different results than the ANES model. The top 5 variables are: 
+
+- **AGE**-*Respondent's age*
+- **OCC**-*Respondent's occupation*
+- **CURGOV**-*Respondent's assessment of current government's state affair administrations *
+- **RINCOME**-*Respondent's income*
+- **EDUC**: *Respondent's educational attainment*
+
+The ANES model also included questions about respondent's age, education, occupation, and income. So, why does the ICPSR random forest model heavily use a respondent's demographics rather than their political opinion? One reason can come from the survey composition itself. The ANES survey is a survey geared toward more political questions and is administered during presidential elections. The KGSS survey is a more general survey of South Korean society. This is one explanation we have for why the ANES models were great at predicting a respondent's political ID compared to the KGSS.
+
+#### VIP Comparison of American voter identification and South Korean voter identification
+
+```{r}
+#| label: vip plot comparison
+#| message: false
+#| warning: false
+#| fig-cap: Comparison between ANES and KGSS Survey Respondents and the variables key to identifying political identity
+#| include: false
+
+anes_vip_plot +
+  labs(title ="ANES Respondent") + 
+  kgss_vip_plot + 
+  labs(title = "KGSS Respondent")
+
+```
+
+
+### Testing KGSS predictive model 
+
+```{r}
+#| label: assessing korean model 
+#| message: false
+#| warning: false
+
+
+kgss_final_wf <- 
+  kgss_rf_final |>
+  extract_workflow()
+
+kgss_rf_predictions <-
+  predict(kgss_final_wf, new_data = kgss_test) |>
+  bind_cols(
+    predict(kgss_final_wf, new_data = kgss_test, type = "prob"),
+    kgss_test |>
+    select(PARTYLR)
+  )
+
+select(kgss_rf_predictions, PARTYLR, .pred_class, starts_with(".pred"))
+
+```
+
+```{r}
+#| label: precision and recall of KGSS model 
+#| message: false
+#| warning: false
+
+kgss_rf_predictions |>
+  precision(
+    truth = PARTYLR,
+    estimate = .pred_class)
+
+kgss_rf_predictions |>
+  recall(
+    truth = PARTYLR,
+    estimate = .pred_class
+  )
+
+```
+
+The precision of the KGSS model is approximately 42 percent. The recall of this model is around 24 percent. These values indicate that this model would *not* ready for practical implementation.
+
+## Predicting Political Identification in One-Party Authoritarian Regimes - China
+
+Throughout this project, we have discussed how socioeconomic indicators in the form of survey questions can be used to identify a respondent's political identity. Though our prior models covered a plethora of categories that can serve as identifiers, we have not looked into whether we could predict political identity for respondent's in one-party authoritarian regimes. Using Wave 5[^10] data, our outcome variable is **q104**: *Where would you place our country [China] today? [Is] democracy suitable or not?* 
+
+[^10]: Wave 5 data is data collected between 2018-2021 
+
+```{r}
+#| label: setup for using Asian Barometer data
+#| message: false
+#| warning: false
+
+china <- read_sav("data/w5_china.sav")
+
+reduced_china <- china  |>
+  select(matches("q"), SE4, SE5, SE5A, SE8A, SE8B, Se11, w, Political_affiliation) |>
+  filter(q104 > -0 & q104 < 11) |>
+  mutate(
+    w = importance_weights(w),
+    across(q1:q6, ~ ifelse(. %in% c(8, 9), NA, .)), 
+    across(q7:q17, ~ifelse(. %in% c(97, 98, 99), NA, .)), 
+    across(q22:q23, ~ ifelse(. %in% c(8, 9), NA, .)),
+    across(q24:q27, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q39:q48, ~ ifelse(. %in% c(8, 9), NA, .)), 
+    q49 = ifelse(q49 %in% c(97, 98, 99), NA, q49), 
+    q50 = ifelse(Q50 %in% c(8, 9), NA, Q50),
+    q51a = ifelse(Q51A %in% c(7, 9), NA, Q51A),
+    q51b = ifelse(Q51B %in% c(7, 9), NA, Q51B), 
+    q51c = ifelse(Q51C %in% c(7, 9), NA, Q51C), 
+    q51d = ifelse(Q51D %in% c(7, 9), NA, Q51D), 
+    q52 = ifelse(q52 %in% c(8, 9), NA, q52), 
+    across(q53:q55, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q58:q90, ~ ifelse(. %in% c(-1, 0, 7, 8, 9), NA, .)),
+    q82a = ifelse(q82a %in% c(8, 9), NA, q82a), 
+    q83a = ifelse(q83a %in% c(8, 9), NA, q83a),
+    q84a = ifelse(q84a %in% c(8, 9), NA, q84a),
+    q85a = ifelse(q85a %in% c(8, 9), NA, q85a),
+    across(q91:q97, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q98:q100, ~ ifelse(. %in% c(8, 9), NA, .)),
+    across(q102:q104, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    q106 = ifelse(q106 %in% c(990, 998, 999), NA, q106),
+    across(q107:q127, ~ ifelse(. %in% c(-1, 0, 7, 8, 9), NA, .)),
+    across(q128:q131, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    across(q132:q173, ~ ifelse(. %in% c(97, 98, 99), NA, .)),
+    q156_1 = ifelse(q156_1 %in% c(-1, 0, 7, 8, 9), NA, q156_1),
+    q156a = ifelse(q156a %in% c(-1, 0, 7, 8, 9), NA, q156a),
+    q157a = ifelse(q157a %in% c(-1, 0, 7, 8, 9), NA, q157a),
+    q157_1 = ifelse(q157_1 %in% c(-1, 0, 7, 8, 9), NA, q157_1),
+    q160a = ifelse(q160a %in% c(-1, 0, 7, 8, 9), NA, q160a),
+    q160b = ifelse(q160b %in% c(-1, 0, 7, 8, 9), NA, q160b),
+    q160c = ifelse(q160c %in% c(-1, 0, 7, 8, 9), NA, q160c),
+    q160d = ifelse(q160d %in% c(-1, 0, 7, 8, 9), NA, q160d),
+    q174 = ifelse(q174 %in% c(90, 97, 98, 99), NA, q174),
+    q175 = ifelse(q175 %in% c(8, 9), NA, q175),
+    q176 = ifelse(q176 %in% c(97, 98, 99), NA, q176),
+    q177 = ifelse(q177 %in% c(8, 9), NA, q177),
+    q178 = ifelse(q178 %in% c(-1, 97, 98, 99), NA, q178),
+    q179 = ifelse(q179 %in% c(90, 97, 98, 99), NA, q179),
+    q180 = ifelse(q180 %in% c(90, 97, 98, 99), NA, q180),
+    across(q183:q185, ~ ifelse(. %in% c(8, 9), NA, .)),
+    SE4 = ifelse(SE4 == 9, NA, SE4), 
+    SE5 = ifelse(SE5 == 99, NA, SE5),
+    SE5A = ifelse(SE5A %in% c(90, 99), NA, SE5A), 
+    SE8A = ifelse(SE8A == 99, NA, SE8A),
+    SE8B = ifelse(SE8B == 9, NA, SE8B),
+    Se11 = ifelse(Se11 == 9999, NA, Se11),
+  ) |> 
+  select(-where(~sum(is.na(.)) > 400)) |>
+  mutate(q104 = as.factor(q104)) |>
+  mutate(across(where(is.labelled), ~ as.numeric(.)))
+
+reduced_china <- reduced_china |>
+  select(-q18, , -q19, -q20, -q21, -(q28:q38), -q56, -q57, -q101, -q105, -q181, -q182)
+
+# q104 is outcome variable 
+
+china_split <- 
+  reduced_china |>
+  initial_split(prop = .75)
+
+china_train <- training(china_split) 
+
+# discards the label to prevent errors in step_impute_bag()
+china_train <- china_train |>
+mutate(across(where(is.labelled), ~ zap_labels(.)))
+
+china_test <- testing(china_split)
+
+china_folds <- vfold_cv(data = china_train, v = 5)
+
+china_recipe <-
+  recipe(q104 ~ ., data = china_train) |>
+  step_impute_bag(all_predictors(), trees = 5)
+
+china_model <-
+  rand_forest(
+    trees = 500,
+    mtry = 5,
+    min_n = 4
+  ) |>
+  set_mode("classification") |>
+  set_engine(
+    engine = "ranger",
+    importance = "impurity",
+    num.threads = 4
+  )
+  
+china_rf_wf <- 
+  workflow() |>
+  add_recipe(china_recipe) |>
+  add_model(china_model) |>
+  add_case_weights(w)
+
+china_resamples <- 
+  china_rf_wf |>
+  fit_resamples(resamples = china_folds)
+
+collect_metrics(china_resamples)
+```
+
+The metric of this model are similar to the KGSS model. The ROC-AUC is much higher and seems to suggest our model is better than what the accuracy and brier score are indicating. Let's check the variable importance plot:
+
+### China's Variable Importance Graph 
+
+```{r}
+#| label: china vip plot last fit
+#| warning: false
+#| message: false
+
+china_rf_final <- 
+  china_rf_wf |>
+  last_fit(china_split)
+
+china_vip_plot <- 
+  china_rf_final |>
+  extract_fit_parsnip() |>
+  vip(num_features = 20)
+
+```
+
+```{r}
+#| label: china vip plot
+#| warning: false
+#| message: false
+#| include: false
+
+
+china_vip_plot +
+  labs(
+    title = str_wrap("Inferring Political Identity from One Scale: Variable Importance in Determining China's Political Institution Preference",width = 100),
+    subtitle = str_wrap("Survey Question 128, which asks to rate China's democratiziation from 0-10 (0 being completely authoritarian), is the most important factor in determining a Chinese voter's political identity", width = 100),
+    caption = "Source: Asian Barometer Survey"
+    )
+
+ggsave(filename = "china_vip_plot.png", width = 11, height = 8.5)
+
+ggsave(filename = "china_vip_plot.pdf", width = 11, height = 8.5)
+
+```
+
+![Chinese Survey Respondent Variable Importance](china_vip_plot.png)
+
+The top five variables are: 
+
+- **q128**: *Where would you place China today [with respect to democratization] on this scale?*
+- **q91**: *The courts protects the ordinary people from the abuse of government power*
+- **q178**: *The influence of China on world affairs is negative or positive?*
+- **q92**: *Politics is clean and free of corruption*
+- **SE5A**: *How many year(s) of formal education have you [the respondent] received?*
+
+It makes sense that **q128** would be the most important variable by a long shot. If you are a respondent who believes China under the Chinese Communist Party is a strongly authoritarian regime, you may believe that building democratic institutions is not feasible. This also ties into **q91** and **q92**, as both are questions that gauge the health of the institutions that support democracy. 
+
+### Testing the China Predictive Model 
+
+```{r}
+#| label: assessing China model 
+#| warning: false
+#| message: false
+
+
+china_final_wf <- 
+  china_rf_final |>
+  extract_workflow()
+
+china_rf_predictions <-
+  predict(china_final_wf, new_data = china_test) |>
+  bind_cols(
+    predict(china_final_wf, new_data = china_test, type = "prob"),
+    china_test |>
+    select(q104)
+  )
+
+select(china_rf_predictions, q104, .pred_class, starts_with(".pred"))
+
+```
+
+```{r}
+#| label: precision and recall of China barometer model
+#| warning: false
+#| message: false
+
+china_rf_predictions |>
+  precision(
+    truth = q104,
+    estimate = .pred_class)
+
+china_rf_predictions |>
+  recall(
+    truth = q104,
+    estimate = .pred_class
+  )
+
+```
+
+The precision of our China predictive model is a decent 42 percent. However, the recall of this model is the poorest of all other models—19 percent. This model needs more refinement before we can use any predictions from it.
+
+## Conclusion 
+
+Though only the United States has a model good enough for the 'real world', we still uncovered a wealth of knowledge about the South Korean selectorate and Chinese 'quasi'-selectorate. We learned that the United States' capitalistic attitudes is a primarily shapes a voter's politics. In South Korea, voter characteristics—mainly age—shape voter preferences. In China, faith in democracy is pragmatic; shaped by how a respondent thinks about the current state of democracy in China.   
+
+## Notes {.appendix}
+
+For the ANES model, we dropped variables where there were over one thousand NAs. This is because without dropping these variables, the model had ~230 variables with the class `logical`. A limitation of `tidyrecipes` is that there isn't a function like `step_num2factor()` to assist in converting logical columns to a type that is easily imputed.
+
+In the KGSS model, you may see predictions for a class '6' despite there only being five recognized classes. Due to time constraints, we were unable to fully clean the data for *every* NA in the outcome variable. We believe that this does not impact the model significant as there were few NAs in **PARTYLR**.
+
